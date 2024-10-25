@@ -51,7 +51,6 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
-import org.jsoup.select.Elements
 import org.jsoup.select.NodeTraversor
 import org.jsoup.select.NodeVisitor
 
@@ -73,11 +72,9 @@ object GalleryDetailParser {
     private val PATTERN_NORMAL_PREVIEW =
         Regex("<div class=\"gdtm\"[^>]*><div[^>]*width:(\\d+)[^>]*height:(\\d+)[^>]*\\(([^)]+)\\)[^>]*-(\\d+)px[^>]*><a[^>]*href=\"([^\"]+)\"[^>]*><img alt=\"([\\d,]+)\"")
     private val PATTERN_NORMAL_PREVIEW_NEW =
-        Regex("<a href=\"([^\"]+)\"><div[^>]*title=\"Page (\\d+):[^>]*width:(\\d+)[^>]*height:(\\d+)[^>]*\\(([^)]+)\\)[^>]*-(\\d+)px[^>]*>")
+        Regex("<a href=\"([^\"]+)\">(?:<div>)?<div[^>]*title=\"Page (\\d+):[^>]*width:(\\d+)[^>]*height:(\\d+)[^>]*\\(([^)]+)\\)[^>]*-(\\d+)px[^>]*>")
     private val PATTERN_LARGE_PREVIEW =
-        Regex("<div class=\"gdtl\"[^>]*><a href=\"([^\"]+)\"><img alt=\"([\\d,]+)\"[^>]*src=\"([^\"]+)\"")
-    private val PATTERN_LARGE_PREVIEW_NEW =
-        Regex("<a href=\"([^\"]+)\"><div[^>]*title=\"Page (\\d+):[^>]*\\(([^)]+)\\)[^>]*0 0[^>]*>")
+        Regex("<a href=\"([^\"]+)\">(?:<div>)?<[^>]*title=\"Page (\\d+):[^>]*(?:url\\(|src=\")([^)\"]+)[)\"]")
     private val PATTERN_NEWER_DATE = Regex(", added (.+?)<br />")
     private val PATTERN_FAVORITE_SLOT =
         Regex("/fav.png\\); background-position:0px -(\\d+)px")
@@ -111,7 +108,7 @@ object GalleryDetailParser {
         PATTERN_ERROR.find(body)?.run { throw EhException(groupValues[1]) }
         val document = Jsoup.parse(body)
         val galleryDetail = GalleryDetail(
-            tags = parseTagGroups(document),
+            tagGroups = parseTagGroups(document),
             comments = parseComments(document),
             previewPages = parsePreviewPages(body),
             previewList = parsePreviewList(body).first,
@@ -281,25 +278,21 @@ object GalleryDetailParser {
         }
     }
 
-    private fun parseTagGroup(element: Element): GalleryTagGroup? = Either.catch {
-        var nameSpace = element.child(0).text()
-        // Remove last ':'
-        nameSpace = nameSpace.substring(0, nameSpace.length - 1)
-        val group = GalleryTagGroup(nameSpace)
-        val tags = element.child(1).children()
-        tags.forEach {
-            var tag = it.text()
-            // Sometimes parody tag is followed with '|' and english translate, just remove them
-            val index = tag.indexOf('|')
-            if (index >= 0) {
-                tag = tag.substring(0, index).trim()
-            }
-            if (it.className() == "gtw") {
-                tag = "_$tag" // weak tag
-            }
-            group.add(tag)
+    private fun parseSingleTagGroup(element: Element): GalleryTagGroup? = Either.catch {
+        val nameSpace = element.child(0).text().run {
+            // Remove last ':'
+            substring(0, length - 1)
         }
-        group.takeIf { it.isNotEmpty() }
+        val tags = element.child(1).children().map { e ->
+            val text = e.text()
+            // Sometimes parody tag is followed with '|' and english translate, just remove them
+            val index = text.indexOf('|')
+            val tag = if (index >= 0) text.substring(0, index).trim() else text
+            // weak tag
+            if (e.className() == "gtw") "_$tag" else tag
+        }
+        check(tags.isNotEmpty()) { "TagGroup is empty!" }
+        GalleryTagGroup(nameSpace, tags)
     }.getOrElse {
         logcat(it)
         null
@@ -310,15 +303,7 @@ object GalleryDetailParser {
      */
     private fun parseTagGroups(document: Document): List<GalleryTagGroup> = Either.catch {
         val taglist = document.getElementById("taglist")!!
-        val tagGroups = taglist.child(0).child(0).children()
-        parseTagGroups(tagGroups)
-    }.getOrElse {
-        logcat(it)
-        emptyList()
-    }
-
-    private fun parseTagGroups(trs: Elements): List<GalleryTagGroup> = Either.catch {
-        trs.mapNotNull { parseTagGroup(it) }
+        taglist.child(0).child(0).children().mapNotNull(::parseSingleTagGroup)
     }.getOrElse {
         logcat(it)
         emptyList()
@@ -444,10 +429,8 @@ object GalleryDetailParser {
     fun parsePreviewList(body: String): Pair<List<GalleryPreview>, List<String>> = runCatching { parseNormalPreview(body) }.getOrElse { parseLargePreview(body) }
 
     private fun parseLargePreview(body: String): Pair<List<GalleryPreview>, List<String>> {
-        val isOld = PATTERN_LARGE_PREVIEW.containsMatchIn(body)
-        check(isOld || PATTERN_LARGE_PREVIEW_NEW.containsMatchIn(body))
-        val patternLarge = if (isOld) PATTERN_LARGE_PREVIEW else PATTERN_LARGE_PREVIEW_NEW
-        return patternLarge.findAll(body).unzip {
+        check(PATTERN_LARGE_PREVIEW.containsMatchIn(body))
+        return PATTERN_LARGE_PREVIEW.findAll(body).unzip {
             val position = it.groupValues[2].toInt() - 1
             val imageKey = getThumbKey(it.groupValues[3].trim())
             val pageUrl = it.groupValues[1].trim()
