@@ -52,6 +52,7 @@ import com.hippo.files.openFileDescriptor
 import com.hippo.files.openOutputStream
 import eu.kanade.tachiyomi.util.system.logcat
 import io.ktor.client.plugins.onDownload
+import io.ktor.client.plugins.timeout
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.request
@@ -71,6 +72,7 @@ class SpiderDen(val info: GalleryInfo) {
     private var tempDownloadDir: Path? = null
     private val saveAsCbz = Settings.saveAsCbz
     private val archiveName = "$gid.cbz"
+    private val downloadTimeout = Settings.downloadTimeout * 1000L
 
     private val lock = ReentrantReadWriteLock()
 
@@ -174,6 +176,9 @@ class SpiderDen(val info: GalleryInfo) {
             notifyProgress(total!!, done, (done - prev).toInt())
             prev = done
         }
+        timeout {
+            requestTimeoutMillis = downloadTimeout
+        }
     }.executeSafely {
         if (it.status.isSuccess()) {
             saveFromHttpResponse(index, it)
@@ -219,9 +224,11 @@ class SpiderDen(val info: GalleryInfo) {
             outFile.openOutputStream().use {
                 response.bodyAsChannel().copyTo(it.channel)
             }
-            val expected = FileHashRegex.findAll(url).last().groupValues[1]
-            val actual = outFile.sha1()
-            check(expected == actual) { "File hash mismatch: expected $expected, but got $actual\nURL: $url" }
+            FileHashRegex.find(url)?.let {
+                val expected = it.groupValues[1]
+                val actual = outFile.sha1()
+                check(expected == actual) { "File hash mismatch: expected $expected, but got $actual\nURL: $url" }
+            }
         }
     }
 
@@ -366,7 +373,7 @@ class SpiderDen(val info: GalleryInfo) {
 
 private const val TEMP_SUFFIX = ".tmp"
 private val FileNameRegex = Regex("^\\d{8}\\.\\w{3,4}")
-private val FileHashRegex = Regex("/([0-9a-f]{40})(?:-\\d+){3}-\\w+")
+private val FileHashRegex = Regex("/h/([0-9a-f]{40})")
 
 fun perFilename(index: Int, extension: String = ""): String = "%08d.%s".format(index + 1, extension)
 
