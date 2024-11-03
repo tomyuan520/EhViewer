@@ -9,8 +9,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
-import com.hippo.ehviewer.client.CHROME_MOBILE_USER_AGENT
-import com.hippo.ehviewer.client.CHROME_USER_AGENT
 import com.hippo.ehviewer.client.EhCookieStore
 import com.hippo.ehviewer.client.data.FavListUrlBuilder
 import com.hippo.ehviewer.download.DownloadsFilterMode
@@ -137,7 +135,7 @@ object Settings : DataStorePreferences(null) {
     var downloadPath by stringOrNullPref("image_path", null)
     var downloadQuery by stringOrNullPref("image_query", null)
     var downloadFragment by stringOrNullPref("image_fragment", null)
-    var archivePasswds by stringSetOrNullPref("archive_passwds")
+    var archivePasswds by stringSetPref("archive_passwds")
     var downloadDelay by intPref("download_delay_3", 1000)
     var multiThreadDownload by intPref("download_thread_2", 3)
     var preloadImage by intPref("preload_image_2", 5)
@@ -257,3 +255,6 @@ object Settings : DataStorePreferences(null) {
         }
     }
 }
+
+private const val CHROME_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${BuildConfig.CHROME_VERSION}.0.0.0 Safari/537.36"
+private const val CHROME_MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${BuildConfig.CHROME_VERSION}.0.0.0 Mobile Safari/537.36"

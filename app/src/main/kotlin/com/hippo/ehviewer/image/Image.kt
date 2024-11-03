@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.IntSize
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import arrow.fx.coroutines.ExitCase
+import arrow.fx.coroutines.bracketCase
 import coil3.BitmapImage
 import coil3.DrawableImage
 import coil3.Image as CoilImage
@@ -47,7 +49,6 @@ import com.hippo.ehviewer.util.isAtLeastP
 import com.hippo.ehviewer.util.isAtLeastU
 import com.hippo.files.openFileDescriptor
 import com.hippo.files.toUri
-import eu.kanade.tachiyomi.util.system.logcat
 import java.nio.ByteBuffer
 import okio.Path
 import splitties.init.appCtx
@@ -97,43 +98,34 @@ class Image private constructor(image: CoilImage, private val src: ImageSource) 
             }
         }
 
-        suspend fun decode(src: ImageSource, checkExtraneousAds: Boolean = false): Image? {
-            return runCatching {
-                val image = when (src) {
-                    is PathSource -> {
-                        if (isAtLeastP && !isAtLeastU) {
-                            src.source.openFileDescriptor("rw").use {
-                                val fd = it.fd
-                                if (isGif(fd)) {
-                                    val buffer = mmap(fd)!!
-                                    val source = object : ByteBufferSource {
-                                        override val source = buffer
-                                        override fun close() {
-                                            munmap(buffer)
-                                            src.close()
-                                        }
-                                    }
-                                    return decode(source, checkExtraneousAds)
-                                }
+        suspend fun decode(src: ImageSource, checkExtraneousAds: Boolean = false): Image {
+            val image = when (src) {
+                is PathSource -> {
+                    if (isAtLeastP && !isAtLeastU) {
+                        src.source.openFileDescriptor("rw").use {
+                            val fd = it.fd
+                            if (isGif(fd)) {
+                                return bracketCase(
+                                    { mmap(fd)!! },
+                                    { buffer -> decode(byteBufferSource(buffer) { munmap(buffer).also { src.close() } }, checkExtraneousAds) },
+                                    { buffer, case -> if (case !is ExitCase.Completed) munmap(buffer) },
+                                )
                             }
                         }
-                        src.right().decodeCoil(checkExtraneousAds)
                     }
+                    src.right().decodeCoil(checkExtraneousAds)
+                }
 
-                    is ByteBufferSource -> {
-                        if (isAtLeastP && !isAtLeastU) {
-                            rewriteGifSource(src.source)
-                        }
-                        src.left().decodeCoil(checkExtraneousAds)
+                is ByteBufferSource -> {
+                    if (isAtLeastP && !isAtLeastU) {
+                        rewriteGifSource(src.source)
                     }
+                    src.left().decodeCoil(checkExtraneousAds)
                 }
-                Image(image, src).apply {
-                    if (innerImage is BitmapImage) src.close()
-                }
-            }.onFailure {
-                src.close()
-                logcat(it)
-            }.getOrNull()
+            }
+            return Image(image, src).apply {
+                if (innerImage is BitmapImage) src.close()
+            }
         }
     }
 }
@@ -147,6 +139,11 @@ interface PathSource : ImageSource {
 
 interface ByteBufferSource : ImageSource {
     val source: ByteBuffer
+}
+
+inline fun byteBufferSource(buffer: ByteBuffer, crossinline release: () -> Unit) = object : ByteBufferSource {
+    override val source = buffer
+    override fun close() = release()
 }
 
 external fun detectBorder(bitmap: Bitmap): IntArray

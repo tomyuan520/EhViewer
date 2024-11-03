@@ -11,12 +11,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://oss.sonatype.org/content/repositories/snapshots")
     }
 }
 
 plugins {
-    id("com.android.settings") version "8.8.0-alpha08"
+    id("com.android.settings") version "8.8.0-alpha09"
 }
 
 android {
