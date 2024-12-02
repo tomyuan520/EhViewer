@@ -88,7 +88,11 @@ option(ENABLE_TEST OFF)
 # Configure libarchive link's static lib
 SET(LIBARCHIVE_CUSTOM_LIBS "libnettle" "liblzma")
 
-set(LIBARCHIVE_PATCH ${CMAKE_CURRENT_LIST_DIR}/0001-Insert-link-libs.patch)
+set(LIBARCHIVE_PATCH
+        ${CMAKE_CURRENT_LIST_DIR}/0001-Insert-link-libs.patch
+        ${CMAKE_CURRENT_LIST_DIR}/0002-Fix-zip_time-performance.patch
+        ${CMAKE_CURRENT_LIST_DIR}/0003-Use-UTF-8-as-default-charset-on-bionic.patch
+)
 FetchContent_Declare(
         libarchive
         GIT_REPOSITORY https://github.com/libarchive/libarchive.git
@@ -111,7 +115,9 @@ FetchContent_MakeAvailable(Corrosion)
 corrosion_import_crate(MANIFEST_PATH ../rust/Cargo.toml LOCKED)
 corrosion_add_target_local_rustflags(ehviewer_rust "-Clink-args=-Wl,-z,max-page-size=16384")
 if (ANDROID_NATIVE_API_LEVEL GREATER_EQUAL 26)
-    corrosion_set_features(ehviewer_rust FEATURES api-level-26)
+    corrosion_set_features(ehviewer_rust FEATURES android-26)
+else ()
+    corrosion_set_features(ehviewer_rust FEATURES android)
 endif ()
 
 # Build and link our app's native lib

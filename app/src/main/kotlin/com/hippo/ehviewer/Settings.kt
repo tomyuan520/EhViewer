@@ -126,9 +126,11 @@ object Settings : DataStorePreferences(null) {
     val qSSaveProgress = boolPref("qs_save_progress", true)
     val security = boolPref("require_unlock", false)
     val animateItems = boolPref("animate_items", true)
+    val enableCronet = boolPref("enable_cronet", true)
     val displayName = stringOrNullPref("display_name", null)
     val avatar = stringOrNullPref("avatar", null)
     val recentDownloadLabel = stringOrNullPref("recent_download_label", null)
+    val showVoteStatus = boolPref("show_vote_status", false)
 
     var downloadScheme by stringOrNullPref("image_scheme", null)
     var downloadAuthority by stringOrNullPref("image_authority", null)
@@ -165,8 +167,6 @@ object Settings : DataStorePreferences(null) {
     var saveAsCbz by boolPref("save_as_cbz", false)
     var archiveMetadata by boolPref("archive_metadata", true)
     var saveJpnAsInfoTitle by boolPref("save_jpn_as_info_title", false)
-    var enableCronet by boolPref("enable_cronet", true)
-    var desktopSite by boolPref("desktop_site", false)
     var recentFavCat by intPref("recent_fav_cat", FavListUrlBuilder.FAV_CAT_LOCAL)
     var defaultFavSlot by intPref("default_favorite_slot", -2)
     var securityDelay by intPref("require_unlock_delay", 0)
@@ -196,6 +196,7 @@ object Settings : DataStorePreferences(null) {
     val keepScreenOn = boolPref("pref_keep_screen_on_key", true)
     val readerLongTapAction = boolPref("reader_long_tap", true)
     val pageTransitions = boolPref("pref_enable_transitions_key", true)
+    val readerReverseControls = boolPref("reader_volume_keys_inverted", false)
     val grayScale = boolPref("pref_grayscale", false)
     val invertedColors = boolPref("pref_inverted_colors", false)
     val readerWebtoonNav = intPref("reader_navigation_mode_webtoon", 0)
@@ -210,9 +211,6 @@ object Settings : DataStorePreferences(null) {
     val showNavigationOverlayNewUser = boolPref("reader_navigation_overlay_new_user", true)
     val showNavigationOverlayOnStart = boolPref("reader_navigation_overlay_on_start", false)
     val stripExtraneousAds = boolPref("strip_extraneous_ads", false)
-
-    val userAgent
-        get() = if (desktopSite) CHROME_USER_AGENT else CHROME_MOBILE_USER_AGENT
 
     init {
         if ("CN" == Locale.getDefault().country) {
@@ -255,6 +253,3 @@ object Settings : DataStorePreferences(null) {
         }
     }
 }
-
-private const val CHROME_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${BuildConfig.CHROME_VERSION}.0.0.0 Safari/537.36"
-private const val CHROME_MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${BuildConfig.CHROME_VERSION}.0.0.0 Mobile Safari/537.36"

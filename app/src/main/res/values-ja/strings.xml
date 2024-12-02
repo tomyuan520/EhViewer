@@ -118,9 +118,6 @@
     <string name="no_comments">コメントなし</string>
     <string name="no_more_comments">コメントはこれ以上ありません</string>
     <string name="more_comment">他のコメントを見る</string>
-    <string name="no_previews">プレビューなし</string>
-    <string name="no_more_previews">プレビューはこれ以上ありません</string>
-    <string name="more_previews">他のプレビューを見る</string>
     <string name="refresh">更新</string>
     <string name="view_original">オリジナルの画像を表示</string>
     <string name="open_in_other_app">他のアプリで開く</string>
@@ -206,7 +203,6 @@
     <string name="format_url">URL</string>
     <string name="format_plain">プレーンテキスト</string>
     <!-- Gallery Previews -->
-    <string name="gallery_previews">ギャラリーのプレビュー</string>
     <string name="go_to">ページに移動</string>
     <!-- Download -->
     <string name="scene_download_title">ダウンロード - %s</string>
@@ -301,9 +297,6 @@
     <string name="settings_eh_detail_size_long">長い</string>
     <string name="settings_eh_detail_size_short">短い</string>
     <string name="settings_eh_thumb_columns">サムネイルのカラム数</string>
-    <string name="settings_eh_thumb_resolution">サムネイル解像度</string>
-    <string name="settings_eh_thumb_resolution_summary">現在の解像度は「%s」です。解像度によってはサムネイルの取得に失敗する場合があります。</string>
-    <string name="settings_eh_thumb_resolution_auto">自動</string>
     <string name="settings_eh_force_eh_thumb">E-Hentai サムネイルサーバーを使用する</string>
     <string name="settings_eh_force_eh_thumb_summary">サムネイルの読み込みに問題がある場合は無効化してください</string>
     <string name="settings_eh_show_jpn_title">日本語のタイトルを表示</string>
@@ -320,10 +313,6 @@
     <string name="settings_eh_tag_translations_source_url">https://placeholder</string>
     <string name="settings_eh_filter">ギャラリーをブロック</string>
     <string name="settings_eh_filter_summary">タイトル、アップローダー、タグ、コメントの投稿者またはギャラリーをブロックします</string>
-    <string name="settings_read_volume_page">音量ボタンでページをめくる</string>
-    <string name="settings_read_volume_page_fast">高速</string>
-    <string name="settings_read_volume_page_slow">低速</string>
-    <string name="settings_read_reverse_volume">音量ボタンを入れ替える</string>
     <string name="settings_block_extraneous_ads">[試験的] 関係のない広告をブロック</string>
     <string name="settings_ads_placeholder">[任意] 広告を置換するプレースホルダーを選択</string>
     <string name="settings_download">ダウンロード</string>
@@ -420,6 +409,7 @@
     <string name="just_now">たった今</string>
     <string name="yesterday">昨日</string>
     <string name="some_days_ago">%d 日前</string>
+    <string name="archive">圧縮パッケージ</string>
     <string name="no_archives">アーカイブなし</string>
     <string name="download_archive_started">アーカイブのダウンロードを開始しました</string>
     <string name="download_archive_failure">アーカイブをダウンロードできませんでした</string>
@@ -427,8 +417,8 @@
     <string name="archive_original">オリジナル</string>
     <string name="archive_resample">リサンプル</string>
     <string name="download_archive_failure_no_hath">アーカイブのダウンロードは H@H クライアントが必要です</string>
-    <string name="current_funds">現在の Fund:</string>
-    <string name="insufficient_funds">Fund が不足しています</string>
+    <string name="current_funds">現在の資金:</string>
+    <string name="insufficient_funds">資金が不足しています</string>
     <string name="image_limits">画像の制限</string>
     <string name="image_limits_summary">使用中: </string>
     <string name="image_limits_normal">制限なし</string>
@@ -471,7 +461,7 @@
     <string name="tag_vote_successfully">評価が成功しました</string>
     <string name="delete_search_history">検索履歴から「%s」を削除しますか？</string>
     <string name="action_add_tag">タグを追加</string>
-    <string name="action_add_tag_tip">新しいタグをコンマで区切って入力してください</string>
+    <string name="action_add_tag_tip">新しいタグを入力してください</string>
     <string name="comment_user_uploader">%s (アップローダー)</string>
     <string name="no_network">ネットワークがありません</string>
     <string name="settings_eh_metered_network_warning">従量制ネットワークの警告</string>
@@ -504,8 +494,6 @@
     <string name="preload_thumb_aggressively">サムネイルを積極的にプリロードする</string>
     <string name="animate_items">リスト項目のアニメーション</string>
     <string name="animate_items_summary">クラッシュやフレームドロップが発生する場合はこれを無効化してください</string>
-    <string name="desktop_site">デスクトップのサイト</string>
-    <string name="desktop_site_summary">デフォルトの画像解像度を高くします</string>
     <string name="auto_updates">自動で更新を確認する</string>
     <string name="update_frequency_never">しない</string>
     <string name="update_frequency_daily">毎日</string>

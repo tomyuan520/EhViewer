@@ -28,7 +28,6 @@ import arrow.fx.coroutines.bracketCase
 import coil3.BitmapImage
 import coil3.DrawableImage
 import coil3.Image as CoilImage
-import coil3.imageLoader
 import coil3.request.CachePolicy
 import coil3.request.ErrorResult
 import coil3.request.SuccessResult
@@ -44,16 +43,24 @@ import com.hippo.ehviewer.jni.isGif
 import com.hippo.ehviewer.jni.mmap
 import com.hippo.ehviewer.jni.munmap
 import com.hippo.ehviewer.jni.rewriteGifSource
+import com.hippo.ehviewer.ktbuilder.execute
 import com.hippo.ehviewer.ktbuilder.imageRequest
 import com.hippo.ehviewer.util.isAtLeastP
 import com.hippo.ehviewer.util.isAtLeastU
 import com.hippo.files.openFileDescriptor
 import com.hippo.files.toUri
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicInteger
 import okio.Path
 import splitties.init.appCtx
 
 class Image private constructor(image: CoilImage, private val src: ImageSource) {
+    val refcnt = AtomicInteger(1)
+
+    fun pin() = refcnt.updateAndGet { if (it != 0) it + 1 else 0 } != 0
+
+    fun unpin() = (refcnt.decrementAndGet() == 0).also { if (it) recycle() }
+
     val intrinsicSize = with(image) { IntSize(width, height) }
     val allocationSize = image.size
     val hasQrCode = when (image) {
@@ -66,11 +73,8 @@ class Image private constructor(image: CoilImage, private val src: ImageSource) 
         else -> image
     }
 
-    var isRecyclable = true
-
-    @Synchronized
-    fun recycle() {
-        when (val image = innerImage ?: return) {
+    private fun recycle() {
+        when (val image = innerImage!!) {
             is DrawableImage -> src.close()
             is BitmapImage -> image.bitmap.recycle()
         }
@@ -81,7 +85,7 @@ class Image private constructor(image: CoilImage, private val src: ImageSource) 
         private val targetWidth = appCtx.resources.displayMetrics.widthPixels * 3
 
         private suspend fun Either<ByteBufferSource, PathSource>.decodeCoil(checkExtraneousAds: Boolean): CoilImage {
-            val req = appCtx.imageRequest {
+            val request = appCtx.imageRequest {
                 onLeft { data(it.source) }
                 onRight { data(it.source.toUri()) }
                 size(Dimension(targetWidth), Dimension.Undefined)
@@ -92,7 +96,7 @@ class Image private constructor(image: CoilImage, private val src: ImageSource) 
                 detectQrCode(checkExtraneousAds)
                 memoryCachePolicy(CachePolicy.DISABLED)
             }
-            return when (val result = appCtx.imageLoader.execute(req)) {
+            return when (val result = request.execute()) {
                 is SuccessResult -> result.image
                 is ErrorResult -> throw result.throwable
             }
