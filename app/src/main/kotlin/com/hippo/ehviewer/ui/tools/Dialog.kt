@@ -1,10 +1,14 @@
 package com.hippo.ehviewer.ui.tools
 
+import android.content.Context
 import androidx.annotation.StringRes
+import androidx.compose.foundation.MutatorMutex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,24 +27,34 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NewLabel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DisplayMode
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.ShapeDefaults
@@ -56,6 +71,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -78,6 +95,9 @@ import arrow.core.Either
 import arrow.core.raise.Raise
 import arrow.core.raise.either
 import arrow.core.right
+import com.hippo.ehviewer.R
+import com.hippo.ehviewer.client.EhTagDatabase
+import com.hippo.ehviewer.client.EhTagDatabase.suggestion
 import com.jamal.composeprefs3.ui.ifNotNullThen
 import com.jamal.composeprefs3.ui.ifTrueThen
 import kotlin.coroutines.Continuation
@@ -95,21 +115,21 @@ interface DialogScope<R> {
     var expectedValue: R
 }
 
-typealias MutableComposable = MutableState<(@Composable () -> Unit)?>
+typealias MutableComposable = MutableState<(@Composable BoxScope.() -> Unit)?>
 
-@JvmInline
-value class DialogState(val field: MutableComposable = mutableStateOf(null)) : MutableComposable by field {
-    @Composable
-    fun Intercept() = value?.invoke()
+class DialogState : MutableComposable by mutableStateOf(null) {
+    val mutex = MutatorMutex()
 
     fun dismiss() {
         value = null
     }
 
-    suspend inline fun <R> dialog(crossinline block: @Composable (CancellableContinuation<R>) -> Unit) = try {
-        suspendCancellableCoroutine { cont -> value = { block(cont) } }
-    } finally {
-        dismiss()
+    suspend inline fun <R> dialog(crossinline block: @Composable BoxScope.(CancellableContinuation<R>) -> Unit) = mutex.mutate {
+        try {
+            suspendCancellableCoroutine { cont -> value = { block(cont) } }
+        } finally {
+            dismiss()
+        }
     }
 
     suspend fun <R> awaitResult(
@@ -152,6 +172,132 @@ value class DialogState(val field: MutableComposable = mutableStateOf(null)) : M
             },
             title = title.ifNotNullThen { Text(text = stringResource(id = title!!)) },
             text = { block(impl, errorMsg) },
+        )
+    }
+
+    context(Context)
+    suspend fun awaitSelectTags(): List<String> = dialog { cont ->
+        val selected = remember { mutableStateListOf<String>() }
+        val state = rememberTextFieldState()
+        var suggestionTranslate by rememberMutableStateInDataStore("SuggestionTranslate") { false }
+        PausableAlertDialog(
+            confirmButton = {
+                TextButton(
+                    onClick = { cont.resume(selected.toList()) },
+                    content = { Text(text = stringResource(id = android.R.string.ok)) },
+                )
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { cont.cancel() },
+                    content = { Text(text = stringResource(id = android.R.string.cancel)) },
+                )
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = stringResource(id = R.string.action_add_tag))
+                    val context = LocalContext.current
+                    if (EhTagDatabase.isTranslatable(context)) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = stringResource(id = R.string.translate_tag_for_tagger),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Checkbox(
+                            checked = suggestionTranslate,
+                            onCheckedChange = { suggestionTranslate = !suggestionTranslate },
+                        )
+                    }
+                }
+            },
+            text = {
+                Column {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        selected.forEach { text ->
+                            InputChip(
+                                selected = true,
+                                onClick = { },
+                                label = { Text(text = text) },
+                                trailingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = null,
+                                        modifier = Modifier.clickable { selected -= text },
+                                    )
+                                },
+                            )
+                        }
+                    }
+                    var expanded by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { if (!it) expanded = false },
+                    ) {
+                        OutlinedTextField(
+                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                            state = state,
+                            label = { Text(text = stringResource(id = R.string.action_add_tag_tip)) },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        val text = state.text.toString().trim()
+                                        if (text.isNotEmpty()) {
+                                            selected += text
+                                            state.clearText()
+                                        }
+                                    },
+                                    content = {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                        val query = state.text.toString().trim().takeIf { s -> s.isNotEmpty() }
+                        var items by remember { mutableStateOf(emptyList<Pair<String, String?>>()) }
+                        LaunchedEffect(suggestionTranslate, query) {
+                            items = query?.let { suggestion(query, suggestionTranslate).take(15).toList() }.orEmpty()
+                            expanded = items.isNotEmpty()
+                        }
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = {},
+                            modifier = Modifier.heightIn(max = 192.dp),
+                        ) {
+                            items.forEach { (tag, hint) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(text = tag, maxLines = 1)
+                                            ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+                                                if (hint != null) {
+                                                    Text(
+                                                        text = hint,
+                                                        maxLines = 1,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        if (tag.endsWith(':')) {
+                                            state.setTextAndPlaceCursorAtEnd(tag)
+                                        } else {
+                                            selected += tag
+                                            state.clearText()
+                                        }
+                                    },
+                                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            idleIcon = Icons.Default.NewLabel,
         )
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import com.hippo.ehviewer.EhApplication.Companion.ktorClient
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.client.data.TagNamespace
+import com.hippo.ehviewer.ui.screen.implicit
 import com.hippo.ehviewer.util.AppConfig
 import com.hippo.ehviewer.util.FileUtils
 import com.hippo.ehviewer.util.copyTo
@@ -35,8 +36,6 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,63 +62,39 @@ object EhTagDatabase : CoroutineScope {
 
     fun getTranslation(prefix: String? = NAMESPACE_PREFIX, tag: String?): String? = tagGroups[prefix]?.get(tag)?.trim()?.ifEmpty { null }
 
-    private fun internalSuggestFlow(
-        tags: Map<String, String>,
-        keyword: String,
-        translate: Boolean,
-        exactly: Boolean,
-    ): Flow<Pair<String?, String>> = flow {
-        if (exactly) {
-            tags[keyword]?.let {
-                emit(Pair(it.takeIf { translate }, keyword))
+    context(Context)
+    fun suggestion(rawKeyword: String, expectTranslate: Boolean): Sequence<Pair<String, String?>> {
+        if (!initialized) return emptySequence()
+        val translate = expectTranslate && isTranslatable(implicit<Context>())
+        val keyword = PREFIXES.fold(rawKeyword) { kwd, pfx -> kwd.removePrefix(pfx) }
+        val prefix = rawKeyword.dropLast(keyword.length)
+        val ns = keyword.substringBefore(':')
+        val tag = keyword.drop(ns.length + 1)
+        val nsPrefix = TagNamespace.from(ns)?.prefix ?: ns
+        val tags = tagGroups[nsPrefix.takeIf { tag.isNotEmpty() && it != NAMESPACE_PREFIX }]
+        fun suggestOnce(exactly: Boolean) = let {
+            fun lookup(tags: Map<String, String>, keyword: String) = when {
+                exactly -> tags[keyword]?.let { t -> sequenceOf(keyword to t.takeIf { translate }) } ?: emptySequence()
+                translate -> tags.asSequence().filter { (tag, hint) ->
+                    tag != keyword && (tag.containsIgnoreSpace(keyword) || hint.containsIgnoreSpace(keyword))
+                }.map { (tag, hint) -> tag to hint }
+                else -> tags.keys.asSequence().filter { tag ->
+                    tag != keyword && tag.containsIgnoreSpace(keyword)
+                }.map { tag -> tag to null }
             }
-        } else {
-            if (translate) {
-                tags.forEach { (tag, hint) ->
-                    if (tag != keyword &&
-                        (tag.containsIgnoreSpace(keyword) || hint.containsIgnoreSpace(keyword))
-                    ) {
-                        emit(Pair(hint, tag))
-                    }
-                }
+            if (tags != null) {
+                lookup(tags, tag).map { (tag, hint) -> "$prefix$nsPrefix:$tag" to hint }
             } else {
-                tags.keys.forEach { tag ->
-                    if (tag != keyword && tag.containsIgnoreSpace(keyword)) {
-                        emit(Pair(null, tag))
+                tagGroups.asSequence().flatMap { (nsPrefix, tags) ->
+                    if (nsPrefix != NAMESPACE_PREFIX) {
+                        lookup(tags, keyword).map { (tag, hint) -> "$prefix$nsPrefix:$tag" to hint }
+                    } else {
+                        lookup(tags, keyword).map { (ns, hint) -> "$prefix$ns:" to hint }
                     }
                 }
             }
         }
-    }
-
-    // Construct a cold flow for tag database suggestions
-    fun suggestFlow(
-        keyword: String,
-        translate: Boolean,
-        exactly: Boolean = false,
-    ): Flow<Pair<String?, String>> = flow {
-        var mKeyword = keyword
-        PREFIXES.forEach { mKeyword = mKeyword.removePrefix(it) }
-        val prefix = keyword.dropLast(mKeyword.length)
-        val namespace = mKeyword.substringBefore(':')
-        val tagKeyword = mKeyword.drop(namespace.length + 1)
-        val namespacePrefix = TagNamespace.from(namespace)?.prefix ?: namespace
-        val tags = tagGroups[namespacePrefix.takeIf { tagKeyword.isNotEmpty() && it != NAMESPACE_PREFIX }]
-        tags?.let {
-            internalSuggestFlow(it, tagKeyword, translate, exactly).collect { (hint, tag) ->
-                emit(Pair(hint, "$prefix$namespacePrefix:$tag"))
-            }
-        } ?: tagGroups.forEach { (namespacePrefix, tags) ->
-            if (namespacePrefix != NAMESPACE_PREFIX) {
-                internalSuggestFlow(tags, mKeyword, translate, exactly).collect { (hint, tag) ->
-                    emit(Pair(hint, "$prefix$namespacePrefix:$tag"))
-                }
-            } else {
-                internalSuggestFlow(tags, mKeyword, translate, exactly).collect { (hint, namespacePrefix) ->
-                    emit(Pair(hint, "$prefix$namespacePrefix:"))
-                }
-            }
-        }
+        return suggestOnce(true) + suggestOnce(false)
     }
 
     private fun String.removeSpace(): String = replace(" ", "")

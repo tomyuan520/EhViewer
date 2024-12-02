@@ -175,10 +175,12 @@ fun AdvancedScreen(navigator: DestinationsNavigator) {
                 useSelectedAsSummary = true,
                 entries = languages,
             )
-            if (BuildConfig.DEBUG) {
-                SwitchPreference(
+            var enableCronet by Settings.enableCronet.asMutableState()
+            if (BuildConfig.DEBUG || !enableCronet) {
+                SwitchPref(
+                    checked = enableCronet,
+                    onMutate = { enableCronet = !enableCronet },
                     title = "Enable Cronet",
-                    value = Settings::enableCronet,
                 )
             }
             if (isAtLeastO) {
@@ -200,11 +202,6 @@ fun AdvancedScreen(navigator: DestinationsNavigator) {
                 onMutate = { animateItems = !animateItems },
                 title = stringResource(id = R.string.animate_items),
                 summary = stringResource(id = R.string.animate_items_summary),
-            )
-            SwitchPreference(
-                title = stringResource(id = R.string.desktop_site),
-                summary = stringResource(id = R.string.desktop_site_summary),
-                value = Settings::desktopSite,
             )
             val exportFailed = stringResource(id = R.string.settings_advanced_export_data_failed)
             LauncherPreference(
