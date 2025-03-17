@@ -114,9 +114,6 @@ object Settings : DataStorePreferences(null) {
     val languageFilter = intPref("language_filter", -1)
     val downloadSortMode = intPref("download_sort_mode", SortMode.Default.flag)
     val downloadFilterMode = intPref("download_filter_mode", DownloadsFilterMode.Default.flag)
-
-    // Enabled by default as some ExHentai thumbnail servers do not support HTTP/2
-    val forceEhThumb = boolPref("force_eh_thumb", true)
     val hasSignedIn = boolPref("has_signed_in", EhCookieStore.hasSignedIn())
     val needSignIn = boolPref("need_sign_in", true)
     val meteredNetworkWarning = boolPref("cellular_network_warning", false)
@@ -141,11 +138,12 @@ object Settings : DataStorePreferences(null) {
     var downloadDelay by intPref("download_delay_3", 1000)
     var multiThreadDownload by intPref("download_thread_2", 3)
     var preloadImage by intPref("preload_image_2", 5)
-    var downloadTimeout by intPref("download_timeout", 60)
+    var connTimeout by intPref("conn_timeout", 10)
+    var timeoutSpeed by intPref("timeout_speed_level", 6)
     var theme by intPref("theme_2", -1).observed { updateWhenThemeChanges() }
     var readCacheSize by intPref("read_cache_size_2", 640)
     var launchPage by intPref("launch_page_2", 0)
-    var commentThreshold by intPref("comment_threshold", -101)
+    var commentThreshold by intPref("comment_threshold", -100)
     var hardwareBitmapThreshold by intPref("hardware_bitmap_threshold", 16384)
     var showComments by boolPref("show_gallery_comments", true)
     var requestNews by boolPref("request_news", false).observed { updateWhenRequestNewsChanges() }

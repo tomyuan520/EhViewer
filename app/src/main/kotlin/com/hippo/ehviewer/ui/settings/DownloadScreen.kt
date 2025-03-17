@@ -50,7 +50,8 @@ import com.hippo.ehviewer.spider.SpiderDen
 import com.hippo.ehviewer.spider.SpiderQueen.Companion.SPIDER_INFO_FILENAME
 import com.hippo.ehviewer.spider.readComicInfo
 import com.hippo.ehviewer.spider.readCompatFromPath
-import com.hippo.ehviewer.ui.composing
+import com.hippo.ehviewer.spider.speedLevelToSpeed
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.keepNoMediaFileStatus
 import com.hippo.ehviewer.ui.tools.observed
 import com.hippo.ehviewer.ui.tools.rememberedAccessor
@@ -80,7 +81,7 @@ import splitties.init.appCtx
 
 @Destination<RootGraph>
 @Composable
-fun AnimatedVisibilityScope.DownloadScreen(navigator: DestinationsNavigator) = composing(navigator) {
+fun AnimatedVisibilityScope.DownloadScreen(navigator: DestinationsNavigator) = Screen(navigator) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     fun launchSnackBar(content: String) = launch { showSnackbar(content) }
     Scaffold(
@@ -88,7 +89,7 @@ fun AnimatedVisibilityScope.DownloadScreen(navigator: DestinationsNavigator) = c
             TopAppBar(
                 title = { Text(text = stringResource(id = R.string.settings_download)) },
                 navigationIcon = {
-                    IconButton(onClick = { navigator.popBackStack() }) {
+                    IconButton(onClick = { popBackStack() }) {
                         Icon(imageVector = Icons.AutoMirrored.Default.ArrowBack, contentDescription = null)
                     }
                 },
@@ -181,11 +182,19 @@ fun AnimatedVisibilityScope.DownloadScreen(navigator: DestinationsNavigator) = c
                 value = downloadDelay,
             )
             IntSliderPreference(
-                maxValue = 120,
-                minValue = 10,
-                step = 10,
-                title = stringResource(id = R.string.settings_download_download_timeout),
-                value = Settings::downloadTimeout,
+                maxValue = 10,
+                minValue = 2,
+                step = 7,
+                title = stringResource(id = R.string.settings_download_connection_timeout),
+                value = Settings::connTimeout,
+            )
+            IntSliderPreference(
+                maxValue = 10,
+                minValue = 4,
+                step = 5,
+                title = stringResource(id = R.string.settings_download_timeout_speed),
+                value = Settings::timeoutSpeed,
+                display = ::speedLevelToSpeed,
             )
             val preloadImage = Settings::preloadImage.observed
             SimpleMenuPreferenceInt(

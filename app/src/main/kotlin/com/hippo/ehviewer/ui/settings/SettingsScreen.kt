@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.ui.settings
 
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.icons.EhIcons
 import com.hippo.ehviewer.icons.filled.SadPanda
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.destinations.AboutScreenDestination
 import com.hippo.ehviewer.ui.destinations.AdvancedScreenDestination
 import com.hippo.ehviewer.ui.destinations.DownloadScreenDestination
@@ -32,7 +34,7 @@ import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 
 @Destination<RootGraph>
 @Composable
-fun SettingsScreen(navigator: DestinationsNavigator) {
+fun AnimatedVisibilityScope.SettingsScreen(navigator: DestinationsNavigator) = Screen(navigator) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
         topBar = {

@@ -44,10 +44,7 @@ fun TorrentList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(items) {
-                Column(
-                    modifier = Modifier.clickable { onItemClick(it) }.minimumInteractiveComponentSize()
-                        .padding(horizontal = 8.dp),
-                ) {
+                Column(modifier = Modifier.clickable { onItemClick(it) }.minimumInteractiveComponentSize().padding(horizontal = 8.dp)) {
                     Text(
                         text = it.name,
                         modifier = Modifier.basicMarquee(

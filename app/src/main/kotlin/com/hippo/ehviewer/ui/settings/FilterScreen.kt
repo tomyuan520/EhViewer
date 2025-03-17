@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.ui.settings
 
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,7 +44,6 @@ import androidx.compose.runtime.currentRecomposeScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,8 +61,8 @@ import com.hippo.ehviewer.client.EhFilter.trigger
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.dao.Filter
 import com.hippo.ehviewer.dao.FilterMode
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.tools.Await
-import com.hippo.ehviewer.ui.tools.LocalDialogState
 import com.hippo.ehviewer.ui.tools.thenIf
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
@@ -74,18 +74,16 @@ import moe.tarsin.coroutines.groupByToObserved
 
 @Destination<RootGraph>
 @Composable
-fun FilterScreen(navigator: DestinationsNavigator) {
-    val scope = rememberCoroutineScope()
+fun AnimatedVisibilityScope.FilterScreen(navigator: DestinationsNavigator) = Screen(navigator) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    val allFilterMap = remember { scope.async { EhFilter.filters.await().groupByToObserved { it.mode } } }
-    val dialogState = LocalDialogState.current
+    val allFilterMap = remember { async { EhFilter.filters.await().groupByToObserved { it.mode } } }
     val textIsEmpty = stringResource(R.string.text_is_empty)
     val labelExist = stringResource(R.string.label_text_exist)
     val animateItems by Settings.animateItems.collectAsState()
 
     fun addFilter() {
-        scope.launch {
-            dialogState.dialog { cont ->
+        launch {
+            dialog { cont ->
                 val types = stringArrayResource(id = R.array.filter_entries)
                 val type = rememberTextFieldState(types[0])
                 val state = rememberTextFieldState()
@@ -193,8 +191,8 @@ fun FilterScreen(navigator: DestinationsNavigator) {
                 },
                 actions = {
                     IconButton(onClick = {
-                        scope.launch {
-                            dialogState.awaitConfirmationOrCancel(
+                        launch {
+                            awaitConfirmationOrCancel(
                                 title = R.string.filter,
                                 showCancelButton = false,
                             ) {
@@ -251,8 +249,8 @@ fun FilterScreen(navigator: DestinationsNavigator) {
                                 Text(text = filter.text, modifier = Modifier.weight(1F))
                                 IconButton(
                                     onClick = {
-                                        scope.launch {
-                                            dialogState.awaitConfirmationOrCancel(confirmText = R.string.delete) {
+                                        launch {
+                                            awaitConfirmationOrCancel(confirmText = R.string.delete) {
                                                 Text(text = stringResource(id = R.string.delete_filter, filter.text))
                                             }
                                             filter.forget {

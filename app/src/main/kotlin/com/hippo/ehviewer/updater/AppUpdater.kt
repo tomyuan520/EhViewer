@@ -4,21 +4,23 @@ import com.hippo.ehviewer.BuildConfig
 import com.hippo.ehviewer.EhApplication.Companion.ktorClient
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.executeAndParseAs
-import com.hippo.ehviewer.client.executeSafely
+import com.hippo.ehviewer.spider.timeoutBySpeed
 import com.hippo.ehviewer.util.copyTo
-import com.hippo.ehviewer.util.ensureSuccess
-import io.ktor.client.plugins.timeout
+import com.hippo.files.write
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.header
+import io.ktor.client.request.accept
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.ContentType
 import io.ktor.utils.io.jvm.javaio.toInputStream
-import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.time.Duration.Companion.days
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.io.asSource
 import moe.tarsin.coroutines.runSuspendCatching
+import okio.Path
 import tachiyomi.data.release.GithubArtifacts
 import tachiyomi.data.release.GithubCommitComparison
 import tachiyomi.data.release.GithubRelease
@@ -68,24 +70,31 @@ object AppUpdater {
         return null
     }
 
-    suspend fun downloadUpdate(url: String, file: File) = ghStatement(url) {
-        timeout {
-            requestTimeoutMillis = 60_000
-        }
-    }.executeSafely { response ->
-        response.status.ensureSuccess()
-        if (url.endsWith("zip")) {
-            response.bodyAsChannel().toInputStream().use { stream ->
-                ZipInputStream(stream).use { zip ->
-                    zip.nextEntry
-                    file.outputStream().use {
-                        zip.copyTo(it)
-                    }
+    suspend fun downloadUpdate(url: String, path: Path) {
+        val isZip = url.endsWith("zip")
+        timeoutBySpeed(
+            url,
+            {
+                ghStatement(url) {
+                    // https://docs.github.com/en/rest/releases/assets?apiVersion=2022-11-28#get-a-release-asset
+                    if (!isZip) accept(ContentType.Application.OctetStream)
+                    it()
                 }
-            }
-        } else {
-            response.bodyAsChannel().copyTo(file)
-        }
+            },
+            { _, _, _ -> },
+            { response ->
+                if (isZip) {
+                    response.bodyAsChannel().toInputStream().use { stream ->
+                        ZipInputStream(stream).use { zip ->
+                            zip.nextEntry
+                            path.write { transferFrom(zip.asSource()) }
+                        }
+                    }
+                } else {
+                    response.bodyAsChannel().copyTo(path)
+                }
+            },
+        )
     }
 }
 
@@ -93,7 +102,7 @@ private suspend inline fun ghStatement(
     url: String,
     builder: HttpRequestBuilder.() -> Unit = {},
 ) = ktorClient.prepareGet(url) {
-    header("Authorization", GithubTokenParts.joinToString("_", prefix = "Bearer "))
+    bearerAuth(GithubTokenParts.joinToString("_"))
     apply(builder)
 }
 

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -69,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -96,7 +98,7 @@ import com.hippo.ehviewer.icons.EhIcons
 import com.hippo.ehviewer.icons.big.Download
 import com.hippo.ehviewer.ui.DrawerHandle
 import com.hippo.ehviewer.ui.LocalSideSheetState
-import com.hippo.ehviewer.ui.composing
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.confirmRemoveDownloadRange
 import com.hippo.ehviewer.ui.main.DownloadCard
 import com.hippo.ehviewer.ui.main.FAB_ANIMATE_TIME
@@ -106,11 +108,12 @@ import com.hippo.ehviewer.ui.main.plus
 import com.hippo.ehviewer.ui.navToReader
 import com.hippo.ehviewer.ui.showMoveDownloadLabelList
 import com.hippo.ehviewer.ui.tools.Await
+import com.hippo.ehviewer.ui.tools.DialogState
 import com.hippo.ehviewer.ui.tools.EmptyWindowInsets
 import com.hippo.ehviewer.ui.tools.FastScrollLazyColumn
 import com.hippo.ehviewer.ui.tools.FastScrollLazyVerticalStaggeredGrid
 import com.hippo.ehviewer.ui.tools.HapticFeedbackType
-import com.hippo.ehviewer.ui.tools.delegateSnapshotUpdate
+import com.hippo.ehviewer.ui.tools.asyncState
 import com.hippo.ehviewer.ui.tools.rememberHapticFeedback
 import com.hippo.ehviewer.ui.tools.rememberInVM
 import com.hippo.ehviewer.ui.tools.thenIf
@@ -132,7 +135,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Destination<RootGraph>
 @Composable
-fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = composing(navigator) {
+fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = Screen(navigator) {
     var gridView by Settings.gridView.asMutableState()
     var sortMode by Settings.downloadSortMode.asMutableState()
     val filterMode by Settings.downloadFilterMode.collectAsState { DownloadsFilterMode.from(it) }
@@ -289,6 +292,7 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
             },
         )
 
+        val dialogState by rememberUpdatedState(implicit<DialogState>())
         val labelsListState = rememberLazyListState()
         val editEnable = DownloadsFilterMode.CUSTOM == filterMode
         val hapticFeedback = rememberHapticFeedback()
@@ -300,36 +304,34 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
         }
         var fromIndex by remember { mutableIntStateOf(-1) }
         FastScrollLazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
             state = labelsListState,
             contentPadding = WindowInsets.systemBars.only(WindowInsetsSides.Bottom).asPaddingValues(),
         ) {
             item {
                 ListItem(
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clip(CardDefaults.shape).clickable {
                         switchLabel("")
                         closeSheet()
                     },
-                    tonalElevation = 1.dp,
                     shadowElevation = 1.dp,
                     headlineContent = {
                         Text("$allName [$totalCount]")
                     },
-                    colors = listItemOnDrawerColor(),
+                    colors = listItemOnDrawerColor(filterState.label == ""),
                 )
             }
             item {
                 ListItem(
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clip(CardDefaults.shape).clickable {
                         switchLabel(null)
                         closeSheet()
                     },
-                    tonalElevation = 1.dp,
                     shadowElevation = 1.dp,
                     headlineContent = {
                         Text("$emptyLabelName [${downloadsCount.getOrDefault(null, 0)}]")
                     },
-                    colors = listItemOnDrawerColor(),
+                    colors = listItemOnDrawerColor(filterState.label == null),
                 )
             }
 
@@ -337,12 +339,13 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
                 val index by rememberUpdatedState(itemIndex)
                 val item by rememberUpdatedState(label)
                 // Not using rememberSwipeToDismissBoxState to prevent LazyColumn from reusing it
+                // SQLite may reuse ROWIDs from previously deleted rows so they'll have the same key
                 val dismissState = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, density) }
                 LaunchedEffect(dismissState) {
                     snapshotFlow { dismissState.currentValue }.collect {
                         if (it == SwipeToDismissBoxValue.EndToStart) {
                             runCatching {
-                                awaitConfirmationOrCancel(confirmText = R.string.delete) {
+                                dialogState.awaitConfirmationOrCancel(confirmText = R.string.delete) {
                                     Text(text = stringResource(R.string.delete_label, item))
                                 }
                             }.onSuccess {
@@ -378,11 +381,10 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
                             label = "elevation",
                         )
                         ListItem(
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.clip(CardDefaults.shape).clickable {
                                 switchLabel(item)
                                 closeSheet()
                             },
-                            tonalElevation = 1.dp,
                             shadowElevation = elevation,
                             headlineContent = {
                                 val name = if (filterMode == DownloadsFilterMode.ARTIST) getTranslation(label) else label
@@ -434,7 +436,7 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
                                     }
                                 }
                             },
-                            colors = listItemOnDrawerColor(),
+                            colors = listItemOnDrawerColor(filterState.label == item),
                         )
                     }
                 }
@@ -633,15 +635,14 @@ fun AnimatedVisibilityScope.DownloadsScreen(navigator: DestinationsNavigator) = 
         }
     }
 
-    val hideFab by delegateSnapshotUpdate {
-        record { fabHidden }
-        transform {
-            // Bug: IDE failed to inference 'hide's type
-            onEachLatest { hide: Boolean ->
+    val hideFab by asyncState(
+        produce = { fabHidden },
+        transform = {
+            onEachLatest { hide ->
                 if (!hide) delay(FAB_ANIMATE_TIME.toLong())
             }
-        }
-    }
+        },
+    )
 
     FabLayout(
         hidden = hideFab && !selectMode,

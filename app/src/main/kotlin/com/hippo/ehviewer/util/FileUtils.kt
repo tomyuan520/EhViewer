@@ -15,13 +15,15 @@
  */
 package com.hippo.ehviewer.util
 
+import com.hippo.files.write
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.copyTo
+import io.ktor.utils.io.InternalAPI
+import io.ktor.utils.io.rethrowCloseCauseIfNeeded
 import java.io.File
-import java.io.RandomAccessFile
 import java.util.Locale
 import kotlin.math.ln
 import kotlin.math.pow
+import okio.Path
 
 object FileUtils {
     // Even though vfat allows 255 UCS-2 chars, we might eventually write to
@@ -38,37 +40,14 @@ object FileUtils {
      * @param si    si units
      * @return the human readable string
      */
-    fun humanReadableByteCount(bytes: Long, si: Boolean): String {
-        val unit = if (si) 1000 else 1024
-        if (bytes < unit) return "$bytes B"
-        val exp = (ln(bytes.toDouble()) / ln(unit.toDouble())).toInt()
-        val pre = (if (si) "kMGTPE" else "KMGTPE")[exp - 1].toString() + if (si) "" else "i"
-        return String.format(
+    fun humanReadableByteCount(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val exp = (ln(bytes.toDouble()) / ln(1024f)).toInt()
+        return "%.1f %sB".format(
             Locale.US,
-            "%.1f %sB",
-            bytes / unit.toDouble().pow(exp.toDouble()),
-            pre,
+            bytes / 1024.toDouble().pow(exp.toDouble()),
+            ("KMGTPE")[exp - 1].toString() + "i",
         )
-    }
-
-    /**
-     * Try to delete file, dir and it's children
-     *
-     * @param file the file to delete
-     * The dir to deleted
-     */
-    fun delete(file: File?): Boolean {
-        file ?: return false
-        return deleteContent(file) and file.delete()
-    }
-
-    fun deleteContent(file: File?): Boolean {
-        file ?: return false
-        var success = true
-        file.listFiles()?.forEach {
-            success = success and delete(it)
-        }
-        return success
     }
 
     fun cleanupDirectory(dir: File?, maxFiles: Int = 10) {
@@ -142,36 +121,15 @@ object FileUtils {
      * @return null for start with . dot
      */
     fun getNameFromFilename(filename: String?) = filename?.substringBeforeLast('.')?.ifEmpty { null }
-
-    /**
-     * Create a temp file, you need to delete it by you self.
-     *
-     * @param parent    The temp file's parent
-     * @param extension The extension of temp file
-     * @return The temp file or null
-     */
-    fun createTempFile(parent: File?, extension: String?): File? {
-        parent ?: return null
-        val now = System.currentTimeMillis()
-        for (i in 0..99) {
-            var filename = (now + i).toString()
-            extension?.let {
-                filename = "$filename.$it"
-            }
-            val tempFile = File(parent, filename)
-            if (!tempFile.exists()) {
-                return tempFile
-            }
-        }
-
-        // Unbelievable
-        return null
-    }
 }
 
-@Suppress("BlockingMethodInNonBlockingContext")
-suspend fun ByteReadChannel.copyTo(file: File) {
-    RandomAccessFile(file, "rw").use {
-        copyTo(it.channel)
+@OptIn(InternalAPI::class)
+suspend fun ByteReadChannel.copyTo(file: Path) {
+    file.write {
+        while (!isClosedForRead) {
+            transferFrom(readBuffer)
+            awaitContent()
+        }
+        rethrowCloseCauseIfNeeded()
     }
 }

@@ -36,7 +36,7 @@ import androidx.compose.ui.util.lerp
 import arrow.resilience.Schedule
 import arrow.resilience.retry
 import com.hippo.ehviewer.ui.tools.PredictiveBackEasing
-import com.hippo.ehviewer.ui.tools.delegateSnapshotUpdate
+import com.hippo.ehviewer.ui.tools.asyncState
 import com.hippo.ehviewer.ui.tools.snackBarPadding
 import kotlin.time.Duration.Companion.microseconds
 import kotlinx.coroutines.CancellationException
@@ -129,10 +129,10 @@ fun FabLayout(
     }
     val builder by rememberUpdatedState(fabBuilder)
 
-    val secondaryFab by delegateSnapshotUpdate {
-        record { buildFab(builder) }
-        transform { onEachLatest { state.collapse(MutatePriority.PreventUserInput) } }
-    }
+    val secondaryFab by asyncState(
+        produce = { buildFab(builder) },
+        transform = { onEachLatest { state.collapse(MutatePriority.PreventUserInput) } },
+    )
 
     val density = LocalDensity.current
     val interval = remember(density) { with(density) { FabInterval.roundToPx() } }

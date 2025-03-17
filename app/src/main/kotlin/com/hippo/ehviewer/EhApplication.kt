@@ -29,10 +29,10 @@ import coil3.asImage
 import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.network.ConnectivityChecker
-import coil3.network.NetworkFetcher
-import coil3.network.ktor3.asNetworkClient
+import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.ErrorResult
 import coil3.request.ImageRequest
+import coil3.request.allowRgb565
 import coil3.request.crossfade
 import coil3.serviceLoaderEnabled
 import coil3.util.DebugLogger
@@ -44,8 +44,6 @@ import com.hippo.ehviewer.coil.HardwareBitmapInterceptor
 import com.hippo.ehviewer.coil.MapExtraInfoInterceptor
 import com.hippo.ehviewer.coil.MergeInterceptor
 import com.hippo.ehviewer.coil.QrCodeInterceptor
-import com.hippo.ehviewer.coil.exchangeSite
-import com.hippo.ehviewer.coil.limitConcurrency
 import com.hippo.ehviewer.dailycheck.checkDawn
 import com.hippo.ehviewer.dao.SearchDatabase
 import com.hippo.ehviewer.download.DownloadManager
@@ -69,6 +67,7 @@ import com.hippo.ehviewer.util.isAtLeastO
 import com.hippo.ehviewer.util.isAtLeastP
 import com.hippo.ehviewer.util.isAtLeastS
 import com.hippo.ehviewer.util.isAtLeastSExtension7
+import com.hippo.files.deleteContent
 import eu.kanade.tachiyomi.util.lang.launchIO
 import eu.kanade.tachiyomi.util.lang.launchUI
 import eu.kanade.tachiyomi.util.lang.withUIContext
@@ -110,8 +109,16 @@ class EhApplication :
         super.onCreate()
         System.loadLibrary("ehviewer")
         lifecycleScope.launchIO {
-            launchUI { FavouriteStatusRouter.collect { (gid, slot) -> detailCache[gid]?.favoriteSlot = slot } }
-            launch { EhTagDatabase }
+            launchUI {
+                FavouriteStatusRouter.collect { info ->
+                    detailCache[info.gid]?.apply {
+                        favoriteSlot = info.favoriteSlot
+                        favoriteName = info.favoriteName
+                        favoriteNote = info.favoriteNote
+                    }
+                }
+            }
+            EhTagDatabase.launchUpdate()
             launch { EhDB }
             launchIO { dataStateFlow.value }
             launchIO { OSUtils.totalMemory }
@@ -149,14 +156,8 @@ class EhApplication :
     }
 
     private fun clearTempDir() {
-        var dir = AppConfig.tempDir
-        if (null != dir) {
-            FileUtils.deleteContent(dir)
-        }
-        dir = AppConfig.externalTempDir
-        if (null != dir) {
-            FileUtils.deleteContent(dir)
-        }
+        AppConfig.tempDir.deleteContent()
+        AppConfig.externalTempDir?.deleteContent()
     }
 
     override fun newImageLoader(context: Context) = context.imageLoader {
@@ -164,8 +165,8 @@ class EhApplication :
         components {
             serviceLoaderEnabled(false)
             add(
-                NetworkFetcher.Factory(
-                    networkClient = { ktorClient.asNetworkClient().limitConcurrency().exchangeSite() },
+                KtorNetworkFetcherFactory(
+                    httpClient = { ktorClient },
                     connectivityChecker = { ConnectivityChecker.ONLINE },
                 ),
             )
@@ -173,6 +174,8 @@ class EhApplication :
             add(DownloadThumbInterceptor)
             if (isAtLeastO) {
                 add(HardwareBitmapInterceptor)
+            } else {
+                allowRgb565(true)
             }
             add(CropBorderInterceptor)
             add(DetectBorderInterceptor)

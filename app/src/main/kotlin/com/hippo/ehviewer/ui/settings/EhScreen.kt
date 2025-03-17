@@ -1,6 +1,8 @@
 package com.hippo.ehviewer.ui.settings
 
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -27,7 +29,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -37,13 +38,13 @@ import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.asMutableState
 import com.hippo.ehviewer.client.EhCookieStore
 import com.hippo.ehviewer.client.EhTagDatabase
-import com.hippo.ehviewer.client.EhUrl
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.collectAsState
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.destinations.FilterScreenDestination
 import com.hippo.ehviewer.ui.destinations.MyTagsScreenDestination
 import com.hippo.ehviewer.ui.destinations.UConfigScreenDestination
-import com.hippo.ehviewer.ui.tools.LocalDialogState
+import com.hippo.ehviewer.ui.screen.implicit
 import com.hippo.ehviewer.ui.tools.observed
 import com.hippo.ehviewer.ui.tools.rememberedAccessor
 import com.hippo.ehviewer.util.copyTextToClipboard
@@ -58,20 +59,18 @@ import kotlinx.datetime.LocalTime
 
 @Destination<RootGraph>
 @Composable
-fun EhScreen(navigator: DestinationsNavigator) {
+fun AnimatedVisibilityScope.EhScreen(navigator: DestinationsNavigator) = Screen(navigator) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope { Dispatchers.IO }
-    val context = LocalContext.current
     fun launchSnackBar(content: String) = coroutineScope.launch { snackbarHostState.showSnackbar(content) }
     val hasSignedIn by Settings.hasSignedIn.collectAsState()
-    val dialogState = LocalDialogState.current
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(id = R.string.settings_eh)) },
                 navigationIcon = {
-                    IconButton(onClick = { navigator.popBackStack() }) {
+                    IconButton(onClick = { popBackStack() }) {
                         Icon(imageVector = Icons.AutoMirrored.Default.ArrowBack, contentDescription = null)
                     }
                 },
@@ -95,7 +94,7 @@ fun EhScreen(navigator: DestinationsNavigator) {
                 ) {
                     coroutineScope.launch {
                         val cookies = EhCookieStore.getIdentityCookies()
-                        dialogState.awaitConfirmationOrCancel(
+                        awaitConfirmationOrCancel(
                             confirmText = R.string.settings_eh_sign_out,
                             dismissText = R.string.settings_eh_clear_igneous,
                             showCancelButton = cookies.last().second != null,
@@ -132,15 +131,6 @@ fun EhScreen(navigator: DestinationsNavigator) {
                     entryValueRes = R.array.gallery_site_entry_values,
                     value = gallerySite,
                 )
-                AnimatedVisibility(gallerySite.value == EhUrl.SITE_EX) {
-                    var forceEhThumb by Settings.forceEhThumb.asMutableState()
-                    SwitchPref(
-                        checked = forceEhThumb,
-                        onMutate = { forceEhThumb = !forceEhThumb },
-                        title = stringResource(id = R.string.settings_eh_force_eh_thumb),
-                        summary = stringResource(id = R.string.settings_eh_force_eh_thumb_summary),
-                    )
-                }
                 Preference(
                     title = stringResource(id = R.string.settings_u_config),
                     summary = stringResource(id = R.string.settings_u_config_summary),
@@ -170,7 +160,7 @@ fun EhScreen(navigator: DestinationsNavigator) {
                             addAll(Settings.favCat)
                         }
                     }
-                    defaultFavSlot = dialogState.awaitSelectItem(
+                    defaultFavSlot = awaitSelectItem(
                         items = items,
                         title = R.string.default_favorites_collection,
                         selected = defaultFavSlot + 2,
@@ -254,7 +244,7 @@ fun EhScreen(navigator: DestinationsNavigator) {
                     value = Settings::commentThreshold,
                 )
             }
-            if (EhTagDatabase.isTranslatable(context)) {
+            if (EhTagDatabase.isTranslatable(implicit<Context>())) {
                 SwitchPreference(
                     title = stringResource(id = R.string.settings_eh_show_tag_translations),
                     summary = stringResource(id = R.string.settings_eh_show_tag_translations_summary),
@@ -268,7 +258,7 @@ fun EhScreen(navigator: DestinationsNavigator) {
             Preference(
                 title = stringResource(id = R.string.settings_eh_filter),
                 summary = stringResource(id = R.string.settings_eh_filter_summary),
-            ) { navigator.navigate(FilterScreenDestination) }
+            ) { navigate(FilterScreenDestination) }
             SwitchPreference(
                 title = stringResource(id = R.string.settings_eh_metered_network_warning),
                 value = Settings.meteredNetworkWarning::value,
@@ -289,7 +279,7 @@ fun EhScreen(navigator: DestinationsNavigator) {
                     Preference(title = pickerTitle) {
                         coroutineScope.launch {
                             val time = LocalTime.fromSecondOfDay(Settings.requestNewsTime)
-                            val (hour, minute) = dialogState.awaitSelectTime(pickerTitle, time.hour, time.minute)
+                            val (hour, minute) = awaitSelectTime(pickerTitle, time.hour, time.minute)
                             Settings.requestNewsTime = LocalTime(hour, minute).toSecondOfDay()
                         }
                     }

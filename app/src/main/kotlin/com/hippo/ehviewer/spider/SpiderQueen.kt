@@ -17,6 +17,8 @@
 package com.hippo.ehviewer.spider
 
 import androidx.annotation.IntDef
+import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.partially1
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
@@ -149,7 +151,8 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
     }
 
     private var downloadMode = false
-    val isReady
+
+    private val isReady
         get() = this::spiderInfo.isInitialized && this::pageStates.isInitialized
 
     private val updateLock = Mutex()
@@ -210,10 +213,16 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
 
     private suspend fun doPrepare() {
         spiderDen.initDownloadDirIfExist()
-        spiderInfo = readSpiderInfoFromLocal() ?: readSpiderInfoFromInternet()
-        pageStates = IntArray(spiderInfo.pages)
-        check(spiderInfo.pages > 0)
-        notifyGetPages(spiderInfo.pages)
+        val pages = Either.catch {
+            spiderInfo = readSpiderInfoFromLocal() ?: readSpiderInfoFromInternet()
+            spiderInfo.pages
+        }.getOrElse {
+            logcat(it)
+            galleryInfo.pages
+        }
+        check(pages > 0)
+        pageStates = IntArray(pages)
+        notifyGetPages(pages)
     }
 
     suspend fun awaitReady() = prepareJob.await()
@@ -388,9 +397,8 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
     private fun isStateDone(state: Int): Boolean = state == STATE_FINISHED || state == STATE_FAILED
 
     fun updatePageState(index: Int, @State state: Int, error: String? = null) {
-        var oldState: Int
         synchronized<Unit>(mPageStateLock) {
-            oldState = pageStates[index]
+            val oldState = pageStates[index]
             pageStates[index] = state
             if (!isStateDone(oldState) && isStateDone(state)) {
                 mDownloadedPages.incrementAndGet()
@@ -539,7 +547,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
 
         private suspend fun doInJob(index: Int, force: Boolean, orgImg: Boolean, skipHath: Boolean) {
             suspend fun getPToken(index: Int): String? {
-                if (index !in 0 until size) return null
+                if (!isReady || index !in 0 until size) return null
                 return spiderInfo.pTokenMap[index]
                     ?: getPTokenFromMultiPageViewer(index)
                     ?: getPTokenFromInternet(index)
@@ -567,7 +575,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
             var forceHtml = false
             val original = Settings.downloadOriginImage || orgImg
             runSuspendCatching {
-                repeat(2) { retries ->
+                repeat(3) { retries ->
                     var imageUrl: String? = null
                     var localShowKey: String?
 
@@ -591,7 +599,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
                     if (imageUrl == null) {
                         runSuspendCatching {
                             EhEngine.getGalleryPageApi(
-                                spiderInfo.gid,
+                                galleryInfo.gid,
                                 index,
                                 pToken,
                                 localShowKey,
@@ -617,7 +625,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
                         if (retries == 1 && skipHathKey != null) {
                             originImageUrl += "?nl=$skipHathKey"
                         }
-                        val pageUrl = EhUrl.getPageUrl(spiderInfo.gid, index, pToken)
+                        val pageUrl = EhUrl.getPageUrl(galleryInfo.gid, index, pToken)
                         EhEngine.getOriginalImageUrl(originImageUrl!!, pageUrl) to referer
                     } else {
                         // Original image url won't change, so only set forceHtml in this case
@@ -626,28 +634,24 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
                     }
                     checkNotNull(targetImageUrl)
 
-                    repeat(2) { times ->
-                        runCatching {
-                            logcat(WORKER_DEBUG_TAG) { "Start download image $index attempt #$times" }
-                            val success = spiderDen.makeHttpCallAndSaveImage(
-                                index,
-                                targetImageUrl,
-                                referer,
-                                this@SpiderQueen::notifyPageDownload.partially1(index),
-                            )
-
-                            check(success)
-                            logcat(WORKER_DEBUG_TAG) { "Download image $index succeed" }
-                            updatePageState(index, STATE_FINISHED)
-                            return
-                        }.onFailure {
-                            spiderDen.removeIntermediateFiles(index)
-                            logcat(WORKER_DEBUG_TAG) { "Download image $index attempt #$times failed" }
-                            when (it) {
-                                is CancellationException, is FileNotFoundException -> throw it
-                            }
-                            error = it.displayString()
+                    runCatching {
+                        logcat(WORKER_DEBUG_TAG) { "Start download image $index" }
+                        spiderDen.makeHttpCallAndSaveImage(
+                            index,
+                            targetImageUrl,
+                            referer,
+                            this@SpiderQueen::notifyPageDownload.partially1(index),
+                        )
+                        logcat(WORKER_DEBUG_TAG) { "Download image $index succeed" }
+                        updatePageState(index, STATE_FINISHED)
+                        return
+                    }.onFailure {
+                        spiderDen.removeIntermediateFiles(index)
+                        logcat(WORKER_DEBUG_TAG) { "Download image $index failed" }
+                        when (it) {
+                            is CancellationException, is FileNotFoundException -> throw it
                         }
+                        error = it.displayString()
                     }
                 }
             }.onFailure {

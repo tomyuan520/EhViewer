@@ -28,7 +28,6 @@ import com.hippo.ehviewer.client.EhUtils.getSuitableTitle
 import com.hippo.ehviewer.client.data.GalleryDetail
 import com.hippo.ehviewer.client.data.GalleryInfo
 import com.hippo.ehviewer.client.ehRequest
-import com.hippo.ehviewer.client.executeSafely
 import com.hippo.ehviewer.client.getImageKey
 import com.hippo.ehviewer.coil.read
 import com.hippo.ehviewer.coil.suspendEdit
@@ -39,6 +38,7 @@ import com.hippo.ehviewer.download.tempDownloadDir
 import com.hippo.ehviewer.image.PathSource
 import com.hippo.ehviewer.jni.archiveFdBatch
 import com.hippo.ehviewer.util.FileUtils
+import com.hippo.ehviewer.util.copyTo
 import com.hippo.ehviewer.util.sendTo
 import com.hippo.ehviewer.util.sha1
 import com.hippo.files.delete
@@ -49,15 +49,10 @@ import com.hippo.files.list
 import com.hippo.files.mkdirs
 import com.hippo.files.moveTo
 import com.hippo.files.openFileDescriptor
-import com.hippo.files.openOutputStream
 import eu.kanade.tachiyomi.util.system.logcat
-import io.ktor.client.plugins.onDownload
-import io.ktor.client.plugins.timeout
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.request
-import io.ktor.http.isSuccess
-import io.ktor.utils.io.copyTo
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -72,7 +67,6 @@ class SpiderDen(val info: GalleryInfo) {
     private var tempDownloadDir: Path? = null
     private val saveAsCbz = Settings.saveAsCbz
     private val archiveName = "$gid.cbz"
-    private val downloadTimeout = Settings.downloadTimeout * 1000L
 
     private val lock = ReentrantReadWriteLock()
 
@@ -170,22 +164,12 @@ class SpiderDen(val info: GalleryInfo) {
         url: String,
         referer: String?,
         notifyProgress: (Long, Long, Int) -> Unit,
-    ) = ehRequest(url, referer) {
-        var prev = 0L
-        onDownload { done, total ->
-            notifyProgress(total!!, done, (done - prev).toInt())
-            prev = done
-        }
-        timeout {
-            requestTimeoutMillis = downloadTimeout
-        }
-    }.executeSafely {
-        if (it.status.isSuccess()) {
-            saveFromHttpResponse(index, it)
-        } else {
-            false
-        }
-    }
+    ) = timeoutBySpeed(
+        url,
+        { ehRequest(url, referer, builder = it) },
+        notifyProgress,
+        { resp -> check(saveFromHttpResponse(index, resp)) },
+    )
 
     private suspend inline fun saveResponseMeta(
         index: Int,
@@ -198,7 +182,7 @@ class SpiderDen(val info: GalleryInfo) {
             val file = resolve(tempFile.name.removeSuffix(TEMP_SUFFIX))
             file.delete()
             lock.write { fileCache.remove(file.name) }
-            tempFile.moveTo(file)
+            tempFile moveTo file
             lock.write {
                 fileCache.remove(tempFile.name)
                 fileCache[file.name] = file
@@ -221,9 +205,7 @@ class SpiderDen(val info: GalleryInfo) {
         val url = response.request.url.toString()
         val extension = MimeTypeMap.getFileExtensionFromUrl(url).ifEmpty { "jpg" }
         return saveResponseMeta(index, extension) { outFile ->
-            outFile.openOutputStream().use {
-                response.bodyAsChannel().copyTo(it.channel)
-            }
+            response.bodyAsChannel().copyTo(outFile)
             FileHashRegex.find(url)?.let {
                 val expected = it.groupValues[1]
                 val actual = outFile.sha1()

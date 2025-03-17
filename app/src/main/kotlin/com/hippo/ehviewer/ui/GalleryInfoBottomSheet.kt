@@ -38,8 +38,8 @@ import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 private const val INDEX_URL = 2
 private const val INDEX_PARENT = 9
 
-private fun GalleryDetail.generateContent() = arrayOf(
-    R.string.key_gid to gid.toString(),
+private fun GalleryDetail.content() = arrayOf(
+    R.string.key_gid to "$gid",
     R.string.key_token to token,
     R.string.key_url to EhUrl.getGalleryDetailUrl(gid, token),
     R.string.key_title to title,
@@ -71,7 +71,7 @@ fun GalleryInfoBottomSheet(detail: GalleryDetail) {
             modifier = Modifier.align(Alignment.CenterHorizontally),
             style = MaterialTheme.typography.titleLarge,
         )
-        val data = remember(detail) { detail.generateContent() }
+        val data = remember(detail) { detail.content() }
         ProvideTextStyle(MaterialTheme.typography.labelLarge) {
             LazyColumn(contentPadding = WindowInsets.systemBars.only(WindowInsetsSides.Bottom).asPaddingValues()) {
                 itemsIndexed(data) { index, (key, content) ->

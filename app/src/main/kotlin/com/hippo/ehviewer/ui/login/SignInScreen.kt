@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.ui.login
 
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +19,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -38,17 +38,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.autofill.AutofillType
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
@@ -62,12 +62,13 @@ import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUrl
 import com.hippo.ehviewer.client.EhUtils
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.destinations.WebViewSignInScreenDestination
 import com.hippo.ehviewer.ui.openBrowser
-import com.hippo.ehviewer.ui.tools.LocalDialogState
 import com.hippo.ehviewer.ui.tools.LocalWindowSizeClass
-import com.hippo.ehviewer.ui.tools.autofill
+import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.util.displayString
+import com.jamal.composeprefs3.ui.ifTrueThen
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -77,9 +78,8 @@ import kotlinx.coroutines.Job
 
 @Destination<RootGraph>(start = true)
 @Composable
-fun SignInScreen(navigator: DestinationsNavigator) {
+fun AnimatedVisibilityScope.SignInScreen(navigator: DestinationsNavigator) = Screen(navigator) {
     val windowSizeClass = LocalWindowSizeClass.current
-    val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     var isProgressIndicatorVisible by rememberSaveable { mutableStateOf(false) }
     var showUsernameError by rememberSaveable { mutableStateOf(false) }
@@ -87,9 +87,7 @@ fun SignInScreen(navigator: DestinationsNavigator) {
     val username = rememberTextFieldState()
     val password = rememberTextFieldState()
     var passwordHidden by rememberSaveable { mutableStateOf(true) }
-    val context = LocalContext.current
     var signInJob by remember { mutableStateOf<Job?>(null) }
-    val dialogState = LocalDialogState.current
 
     fun signIn() {
         if (signInJob?.isActive == true) return
@@ -109,14 +107,14 @@ fun SignInScreen(navigator: DestinationsNavigator) {
         isProgressIndicatorVisible = true
 
         EhUtils.signOut()
-        signInJob = coroutineScope.launchIO {
+        signInJob = launchIO {
             runCatching {
                 EhEngine.signIn(username.text.toString(), password.text.toString())
             }.onFailure {
                 withUIContext {
                     focusManager.clearFocus()
                     isProgressIndicatorVisible = false
-                    dialogState.awaitConfirmationOrCancel(
+                    awaitConfirmationOrCancel(
                         confirmText = R.string.get_it,
                         title = R.string.sign_in_failed,
                         showCancelButton = false,
@@ -140,25 +138,23 @@ fun SignInScreen(navigator: DestinationsNavigator) {
     fun UsernameAndPasswordTextField() {
         OutlinedTextField(
             state = username,
-            modifier = Modifier.width(dimensionResource(id = R.dimen.single_max_width)).autofill(
-                autofillTypes = listOf(AutofillType.Username),
-                onFill = { username.setTextAndPlaceCursorAtEnd(it) },
-            ),
+            modifier = Modifier.width(dimensionResource(id = R.dimen.single_max_width))
+                .semantics { contentType = ContentType.Username }
+                .thenIf(!showUsernameError) { padding(bottom = 16.dp) },
             label = { Text(stringResource(R.string.username)) },
-            supportingText = { if (showUsernameError) Text(stringResource(R.string.error_username_cannot_empty)) },
-            trailingIcon = { if (showUsernameError) Icon(imageVector = Icons.Filled.Info, contentDescription = null) },
+            supportingText = showUsernameError.ifTrueThen { Text(stringResource(R.string.error_username_cannot_empty)) },
+            trailingIcon = showUsernameError.ifTrueThen { Icon(imageVector = Icons.Filled.Info, contentDescription = null) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             lineLimits = TextFieldLineLimits.SingleLine,
             isError = showUsernameError,
         )
         OutlinedSecureTextField(
             state = password,
-            modifier = Modifier.width(dimensionResource(id = R.dimen.single_max_width)).autofill(
-                autofillTypes = listOf(AutofillType.Password),
-                onFill = { password.setTextAndPlaceCursorAtEnd(it) },
-            ),
+            modifier = Modifier.width(dimensionResource(id = R.dimen.single_max_width))
+                .semantics { contentType = ContentType.Password }
+                .thenIf(!showPasswordError) { padding(bottom = 16.dp) },
             label = { Text(stringResource(R.string.password)) },
-            supportingText = { if (showPasswordError) Text(stringResource(R.string.error_password_cannot_empty)) },
+            supportingText = showPasswordError.ifTrueThen { Text(stringResource(R.string.error_password_cannot_empty)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             onKeyboardAction = { signIn() },
             trailingIcon = {
@@ -202,7 +198,7 @@ fun SignInScreen(navigator: DestinationsNavigator) {
                     Spacer(modifier = Modifier.height(dimensionResource(id = R.dimen.keyline_margin)))
                     Row(modifier = Modifier.padding(top = dimensionResource(R.dimen.keyline_margin))) {
                         FilledTonalButton(
-                            onClick = { context.openBrowser(EhUrl.URL_REGISTER) },
+                            onClick = { openBrowser(EhUrl.URL_REGISTER) },
                             modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
                         ) {
                             Text(text = stringResource(id = R.string.register))
@@ -289,7 +285,7 @@ fun SignInScreen(navigator: DestinationsNavigator) {
                                 Text(text = stringResource(id = R.string.sign_in))
                             }
                             FilledTonalButton(
-                                onClick = { context.openBrowser(EhUrl.URL_REGISTER) },
+                                onClick = { openBrowser(EhUrl.URL_REGISTER) },
                                 modifier = Modifier.padding(horizontal = 4.dp).width(128.dp),
                             ) {
                                 Text(text = stringResource(id = R.string.register))

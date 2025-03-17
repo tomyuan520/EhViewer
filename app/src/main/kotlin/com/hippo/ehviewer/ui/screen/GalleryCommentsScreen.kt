@@ -1,5 +1,14 @@
 package com.hippo.ehviewer.ui.screen
 
+import android.graphics.Typeface
+import android.text.Html
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
+import android.text.style.URLSpan
+import androidx.annotation.ColorInt
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -50,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -60,23 +71,16 @@ import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.LinkInteractionListener
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.util.lerp
+import androidx.core.text.buildSpannedString
+import androidx.core.text.getSpans
+import androidx.core.text.inSpans
 import androidx.core.text.parseAsHtml
-import arrow.core.left
-import arrow.core.right
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
@@ -87,11 +91,9 @@ import com.hippo.ehviewer.client.data.ListUrlBuilder
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.dao.Filter
 import com.hippo.ehviewer.dao.FilterMode
-import com.hippo.ehviewer.ui.composing
+import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.jumpToReaderByPage
 import com.hippo.ehviewer.ui.main.GalleryCommentCard
-import com.hippo.ehviewer.ui.main.TextOrUrl
-import com.hippo.ehviewer.ui.main.TextOrUrlList
 import com.hippo.ehviewer.ui.openBrowser
 import com.hippo.ehviewer.ui.tools.animateFloatMergePredictiveBackAsState
 import com.hippo.ehviewer.ui.tools.normalizeSpan
@@ -109,60 +111,49 @@ import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import eu.kanade.tachiyomi.util.lang.launchIO
 import eu.kanade.tachiyomi.util.lang.withUIContext
 import eu.kanade.tachiyomi.util.system.logcat
+import kotlin.collections.forEach
 import kotlin.math.roundToInt
-import kotlin.sequences.forEach
 import kotlinx.coroutines.launch
 import moe.tarsin.coroutines.runSuspendCatching
 
-private const val IMAGE_OBJ = '￼'
-private val IMAGE_PATTERN = Regex("<img src=\"([^\"]+)\"")
 private val URL_PATTERN = Regex("(http|https)://[a-z0-9A-Z%-]+(\\.[a-z0-9A-Z%-]+)+(:\\d{1,5})?(/[a-zA-Z0-9-_~:#@!&',;=%/*.?+$\\[\\]()]+)?/?")
 
-fun breakToTextAndUrl(origin: String, text: AnnotatedString): TextOrUrlList {
-    val urls = IMAGE_PATTERN.findAll(origin).toList()
-    if (urls.isEmpty()) return listOf(text.right())
-    val iter = urls.iterator()
-    var currentOfs = 0
-    return buildList<TextOrUrl> {
-        while (true) {
-            val index = text.text.indexOf(IMAGE_OBJ, currentOfs)
-            if (index == -1) break
-            add(text.subSequence(currentOfs, index).right())
-            add(iter.next().groupValues[1].left())
-            currentOfs = index + 1
-        }
-        add(text.subSequence(currentOfs, text.length).right())
-    }
-}
+private inline fun SpannableStringBuilder.withSpans(
+    @ColorInt color: Int,
+    builderAction: SpannableStringBuilder.() -> Unit,
+) = inSpans(
+    RelativeSizeSpan(0.8f),
+    StyleSpan(Typeface.BOLD),
+    ForegroundColorSpan(color),
+    builderAction = builderAction,
+)
 
 @Composable
 fun processComment(
     comment: GalleryComment,
-    linkStyle: TextLinkStyles,
-    onLinkClick: LinkInteractionListener,
-) = AnnotatedString.fromHtml(comment.comment, linkStyle, onLinkClick).let { text ->
-    buildAnnotatedString {
-        val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    imageGetter: Html.ImageGetter,
+) = comment.comment.parseAsHtml(imageGetter = imageGetter).let { text ->
+    buildSpannedString {
         append(text)
         URL_PATTERN.findAll(text).forEach { result ->
             val start = result.range.first
             val end = result.range.last + 1
-            if (!text.hasLinkAnnotations(start, end)) {
-                addLink(LinkAnnotation.Url(result.groupValues[0], linkStyle, onLinkClick), start, end)
+            if (getSpans<URLSpan>(start, end).isEmpty()) {
+                setSpan(URLSpan(result.groupValues[0]), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
-        val style = SpanStyle(fontSize = 0.8f.em, fontWeight = FontWeight.Bold, color = onSurfaceVariant)
+        val color = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
         if (comment.id != 0L && comment.score != 0) {
             val score = comment.score
             val scoreString = if (score > 0) "+$score" else score.toString()
             append("  ")
-            withStyle(style) {
+            withSpans(color) {
                 append(scoreString)
             }
         }
         if (comment.lastEdited != 0L) {
             append("\n\n")
-            withStyle(style) {
+            withSpans(color) {
                 append(
                     stringResource(
                         R.string.last_edited,
@@ -178,7 +169,7 @@ private val MinimumContentPaddingEditText = 88.dp
 
 @Destination<RootGraph>
 @Composable
-fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: DestinationsNavigator) = composing(navigator) {
+fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: DestinationsNavigator) = Screen(navigator) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var commenting by rememberSaveable { mutableStateOf(false) }
     val animationProgress by animateFloatMergePredictiveBackAsState(enable = commenting) { commenting = false }
@@ -334,8 +325,10 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
             val cancelVoteDownSucceed = stringResource(R.string.cancel_vote_down_successfully)
             val voteFailed = stringResource(R.string.vote_failed)
             val layoutDirection = LocalLayoutDirection.current
+            val lazyListState = rememberLazyListState()
             LazyColumn(
                 modifier = Modifier.padding(horizontal = keylineMargin),
+                state = lazyListState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(
                     start = paddingValues.calculateStartPadding(layoutDirection),
@@ -408,9 +401,19 @@ fun AnimatedVisibilityScope.GalleryCommentsScreen(gid: Long, navigator: Destinat
                             )
                         },
                         onCardClick = { launch { doCommentAction(item) } },
-                        onUrlClick = { if (!jumpToReaderByPage(it, galleryDetail)) if (!navWithUrl(it)) openBrowser(it) },
-                        processComment = { c, s, l -> processComment(c, s, l) },
-                        showImage = true,
+                        onUrlClick = {
+                            if (it.startsWith("#c")) {
+                                it.substring(2).toLongOrNull()?.let { id ->
+                                    val index = comments.comments.indexOfFirst { it.id == id }
+                                    if (index != -1) {
+                                        launch { lazyListState.animateScrollToItem(index) }
+                                    }
+                                }
+                            } else {
+                                if (!jumpToReaderByPage(it, galleryDetail)) if (!navWithUrl(it)) openBrowser(it)
+                            }
+                        },
+                        processComment = { c, ig -> processComment(c, ig) },
                     )
                 }
                 if (comments.hasMore) {
