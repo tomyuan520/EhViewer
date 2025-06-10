@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +38,7 @@ fun ProgressDialog() {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(18.dp),
             ) {
-                CircularProgressIndicator()
+                CircularWavyProgressIndicator()
                 Spacer(modifier = Modifier.size(18.dp))
                 Text(text = stringResource(id = string.please_wait))
             }
@@ -46,14 +46,15 @@ fun ProgressDialog() {
     }
 }
 
-suspend fun <R> DialogState.bgWork(work: suspend () -> R) = mutex.mutate {
+context(state: DialogState)
+suspend fun <R> bgWork(work: suspend () -> R) = state.mutex.mutate {
     try {
         suspendCoroutineUninterceptedOrReturn { cont ->
             work.startCoroutineUninterceptedOrReturn(cont).also { r ->
-                if (r == COROUTINE_SUSPENDED) value = { ProgressDialog() }
+                if (r == COROUTINE_SUSPENDED) state.value = { ProgressDialog() }
             }
         }
     } finally {
-        dismiss()
+        state.dismiss()
     }
 }

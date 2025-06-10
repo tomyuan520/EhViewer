@@ -1,11 +1,9 @@
 package com.hippo.ehviewer.client.parser
 
-import android.os.Parcelable
 import com.hippo.ehviewer.client.exception.InsufficientFundsException
 import com.hippo.ehviewer.client.exception.ParseException
 import java.nio.ByteBuffer
 import kotlin.random.Random
-import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
 
 object HomeParser {
@@ -35,15 +33,13 @@ object HomeParser {
         throw ParseException("Parse funds error")
     }
 
-    @Parcelize
-    data class Result(val limits: Limits, val funds: Funds, private val id: Int = Random.nextInt()) : Parcelable
+    data class Result(val limits: Limits, val funds: Funds, private val id: Int = Random.nextInt())
 }
 
-@Parcelize
-data class Funds(val gp: Int, val credit: Int) : Parcelable
-
-@Parcelize
 @Serializable
-data class Limits(val current: Int, val maximum: Int, val resetCost: Int) : Parcelable
+data class Funds(val gp: Int, val credit: Int)
+
+@Serializable
+data class Limits(val current: Int, val maximum: Int, val resetCost: Int)
 
 private external fun parseLimit(body: ByteBuffer, limit: Int = body.limit()): Int

@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShapeDefaults
@@ -67,7 +67,7 @@ import com.hippo.ehviewer.util.displayString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import moe.tarsin.launch
 
 @Stable
 operator fun PaddingValues.plus(r: PaddingValues) = object : PaddingValues {
@@ -78,13 +78,13 @@ operator fun PaddingValues.plus(r: PaddingValues) = object : PaddingValues {
     override fun calculateTopPadding() = l.calculateTopPadding() + r.calculateTopPadding()
 }
 
-context(CoroutineScope, Context)
+context(_: CoroutineScope, ctx: Context)
 @Composable
 fun GalleryList(
     modifier: Modifier = Modifier,
     data: LazyPagingItems<BaseGalleryInfo>,
     contentModifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
+    contentPadding: PaddingValues = PaddingValues.Zero,
     listMode: Int,
     detailListState: LazyGridState = rememberLazyGridState(),
     detailItemContent: @Composable (LazyGridItemScope.(BaseGalleryInfo) -> Unit),
@@ -143,7 +143,7 @@ fun GalleryList(
                     val info = data[index]
                     if (info != null) {
                         detailItemContent(info)
-                        PrefetchAround(data, index, 5, ::imageRequest)
+                        PrefetchAround(data, index, 5) { imageRequest(it) }
                     }
                 }
                 if (showLoadStateIndicator) {
@@ -173,7 +173,7 @@ fun GalleryList(
                     val info = data[index]
                     if (info != null) {
                         thumbItemContent(info)
-                        PrefetchAround(data, index, 10, ::imageRequest)
+                        PrefetchAround(data, index, 10) { imageRequest(it) }
                     }
                 }
                 if (showLoadStateIndicator) {
@@ -203,7 +203,7 @@ fun GalleryList(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator()
+                        CircularWavyProgressIndicator()
                     }
                 }
             }
@@ -223,7 +223,7 @@ fun GalleryList(
             }
         }
 
-        PullToRefreshDefaults.Indicator(
+        PullToRefreshDefaults.LoadingIndicator(
             state = refreshState,
             isRefreshing = isRefreshing,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = contentPadding.calculateTopPadding())

@@ -57,19 +57,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.LoadState
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.paging.PagingSource
-import androidx.paging.PagingState
-import androidx.paging.cachedIn
 import androidx.paging.compose.collectAsLazyPagingItems
 import arrow.core.raise.ensure
 import arrow.core.raise.ensureNotNull
@@ -77,10 +72,8 @@ import com.hippo.ehviewer.EhDB
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.asMutableState
-import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhTagDatabase
 import com.hippo.ehviewer.client.EhUtils
-import com.hippo.ehviewer.client.data.BaseGalleryInfo
 import com.hippo.ehviewer.client.data.ListUrlBuilder
 import com.hippo.ehviewer.client.data.ListUrlBuilder.Companion.MODE_IMAGE_SEARCH
 import com.hippo.ehviewer.client.data.ListUrlBuilder.Companion.MODE_NORMAL
@@ -97,6 +90,7 @@ import com.hippo.ehviewer.icons.EhIcons
 import com.hippo.ehviewer.icons.filled.GoTo
 import com.hippo.ehviewer.ui.DrawerHandle
 import com.hippo.ehviewer.ui.LocalSideSheetState
+import com.hippo.ehviewer.ui.ProvideSideSheetContent
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.awaitSelectDate
 import com.hippo.ehviewer.ui.destinations.ProgressScreenDestination
@@ -111,13 +105,13 @@ import com.hippo.ehviewer.ui.main.GalleryList
 import com.hippo.ehviewer.ui.main.SearchFilter
 import com.hippo.ehviewer.ui.tools.Await
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.EmptyWindowInsets
 import com.hippo.ehviewer.ui.tools.FastScrollLazyColumn
 import com.hippo.ehviewer.ui.tools.HapticFeedbackType
 import com.hippo.ehviewer.ui.tools.asyncState
-import com.hippo.ehviewer.ui.tools.foldToLoadResult
+import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
+import com.hippo.ehviewer.ui.tools.awaitInputText
+import com.hippo.ehviewer.ui.tools.awaitInputTextWithCheckBox
 import com.hippo.ehviewer.ui.tools.rememberHapticFeedback
-import com.hippo.ehviewer.ui.tools.rememberInVM
 import com.hippo.ehviewer.ui.tools.rememberMutableStateInDataStore
 import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.util.FavouriteStatusRouter
@@ -125,15 +119,16 @@ import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import com.ramcosta.composedestinations.spec.Direction
-import eu.kanade.tachiyomi.util.lang.launchIO
-import eu.kanade.tachiyomi.util.lang.withIOContext
 import eu.kanade.tachiyomi.util.lang.withUIContext
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import moe.tarsin.coroutines.onEachLatest
-import moe.tarsin.coroutines.runSuspendCatching
+import moe.tarsin.launch
+import moe.tarsin.launchIO
+import moe.tarsin.navigate
+import moe.tarsin.snackbar
+import moe.tarsin.string
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -155,9 +150,13 @@ fun AnimatedVisibilityScope.ToplistScreen(navigator: DestinationsNavigator) = Ga
 
 @Destination<RootGraph>
 @Composable
-fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: DestinationsNavigator) = Screen(navigator) {
+fun AnimatedVisibilityScope.GalleryListScreen(
+    lub: ListUrlBuilder,
+    navigator: DestinationsNavigator,
+    viewModel: GalleryListViewModel = viewModel { GalleryListViewModel(lub, createSavedStateHandle()) },
+) = Screen(navigator) {
     val searchFieldState = rememberTextFieldState()
-    var urlBuilder by rememberSaveable(lub) { mutableStateOf(lub) }
+    var urlBuilder by viewModel.urlBuilder
     var searchBarExpanded by rememberSaveable { mutableStateOf(false) }
     var searchBarOffsetY by remember { mutableIntStateOf(0) }
     val animateItems by Settings.animateItems.collectAsState()
@@ -188,49 +187,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
     val exHint = stringResource(R.string.gallery_list_search_bar_hint_exhentai)
     val searchBarHint by rememberUpdatedState(if (EhUtils.isExHentai) exHint else ehHint)
     val suitableTitle = getSuitableTitleForUrlBuilder(urlBuilder)
-    val data = rememberInVM {
-        Pager(PagingConfig(25)) {
-            object : PagingSource<String, BaseGalleryInfo>() {
-                override fun getRefreshKey(state: PagingState<String, BaseGalleryInfo>): String? = null
-                override suspend fun load(params: LoadParams<String>) = withIOContext {
-                    if (urlBuilder.mode == MODE_TOPLIST) {
-                        // TODO: Since we know total pages, let pager support jump
-                        val key = (params.key ?: urlBuilder.jumpTo)?.toInt() ?: 0
-                        val prev = (key - 1).takeIf { it > 0 }
-                        val next = (key + 1).takeIf { it < TOPLIST_PAGES }
-                        runSuspendCatching {
-                            urlBuilder.setJumpTo(key)
-                            EhEngine.getGalleryList(urlBuilder.build())
-                        }.foldToLoadResult { result ->
-                            LoadResult.Page(result.galleryInfoList, prev?.toString(), next?.toString())
-                        }
-                    } else {
-                        when (params) {
-                            is LoadParams.Prepend -> urlBuilder.setIndex(params.key, isNext = false)
-                            is LoadParams.Append -> urlBuilder.setIndex(params.key, isNext = true)
-                            is LoadParams.Refresh -> {
-                                val key = params.key
-                                if (key.isNullOrBlank()) {
-                                    if (urlBuilder.jumpTo != null) {
-                                        urlBuilder.next ?: urlBuilder.setIndex("2", true)
-                                    }
-                                } else {
-                                    urlBuilder.setIndex(key, false)
-                                }
-                            }
-                        }
-                        runSuspendCatching {
-                            val url = urlBuilder.build()
-                            EhEngine.getGalleryList(url)
-                        }.foldToLoadResult { result ->
-                            urlBuilder.jumpTo = null
-                            LoadResult.Page(result.galleryInfoList, result.prev, result.next)
-                        }
-                    }
-                }
-            }
-        }.flow.cachedIn(viewModelScope)
-    }.collectAsLazyPagingItems()
+    val data = viewModel.data.collectAsLazyPagingItems()
     ReportDrawnWhen { data.loadState.refresh !is LoadState.Loading }
     FavouriteStatusRouter.Observe(data)
     val listMode by Settings.listMode.collectAsState()
@@ -252,7 +209,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
         ProvideSideSheetContent { sheetState ->
             TopAppBar(
                 title = { Text(text = stringResource(id = R.string.toplist)) },
-                windowInsets = EmptyWindowInsets,
+                windowInsets = WindowInsets(),
                 colors = topBarOnDrawerColor(),
             )
             toplists.forEach { (name, keyword) ->
@@ -300,7 +257,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
                         onClick = {
                             launch {
                                 if (urlBuilder.mode == MODE_IMAGE_SEARCH) {
-                                    showSnackbar(invalidImageQuickSearch)
+                                    snackbar(invalidImageQuickSearch)
                                 } else {
                                     // itemCount == 0 is treated as error, so no need to check here
                                     val firstItem = data.itemSnapshotList.items[getFirstVisibleItemIndex()]
@@ -309,7 +266,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
                                         if (urlBuilder.equalsQuickSearch(q)) {
                                             val nextStr = q.name.substringAfterLast('@', "")
                                             if (nextStr.toLongOrNull() == next) {
-                                                showSnackbar(getString(R.string.duplicate_quick_search, q.name))
+                                                snackbar(string(R.string.duplicate_quick_search, q.name))
                                                 return@launch
                                             }
                                         }
@@ -343,10 +300,10 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
                         )
                     }
                 },
-                windowInsets = EmptyWindowInsets,
+                windowInsets = WindowInsets(),
             )
             Box(modifier = Modifier.fillMaxSize()) {
-                val dialogState by rememberUpdatedState(implicit<DialogState>())
+                val dialogState by rememberUpdatedState(contextOf<DialogState>())
                 val quickSearchListState = rememberLazyListState()
                 val hapticFeedback = rememberHapticFeedback()
                 val reorderableLazyListState = rememberReorderableLazyListState(quickSearchListState) { from, to ->
@@ -372,8 +329,8 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
                             LaunchedEffect(dismissState) {
                                 snapshotFlow { dismissState.currentValue }.collect { value ->
                                     if (value == SwipeToDismissBoxValue.EndToStart) {
-                                        runCatching {
-                                            dialogState.awaitConfirmationOrCancel(confirmText = R.string.delete) {
+                                        dialogState.runCatching {
+                                            awaitConfirmationOrCancel(confirmText = R.string.delete) {
                                                 Text(text = stringResource(R.string.delete_quick_search, item.name))
                                             }
                                         }.onSuccess {
@@ -409,7 +366,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
                                             val builder = ListUrlBuilder(item).apply {
                                                 language = languageFilter
                                             }
-                                            navigator.navigate(builder.asDst())
+                                            navigate(builder.asDst())
                                         } else {
                                             urlBuilder = ListUrlBuilder(item).apply {
                                                 language = languageFilter
@@ -550,7 +507,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
         val height by collectListThumbSizeAsState()
         val showPages by Settings.showGalleryPages.collectAsState()
         val searchBarConnection = remember {
-            val slop = ViewConfiguration.get(implicit<Context>()).scaledTouchSlop
+            val slop = ViewConfiguration.get(contextOf<Context>()).scaledTouchSlop
             val topPaddingPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
             object : NestedScrollConnection {
                 override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
@@ -631,7 +588,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
             onClick(EhIcons.Default.GoTo) {
                 if (isTopList) {
                     val page = urlBuilder.jumpTo?.toIntOrNull() ?: 0
-                    val hint = getString(R.string.go_to_hint, page + 1, TOPLIST_PAGES)
+                    val hint = string(R.string.go_to_hint, page + 1, TOPLIST_PAGES)
                     val text = awaitInputText(title = gotoTitle, hint = hint, isNumber = true) { oriText ->
                         val goto = ensureNotNull(oriText.trim().toIntOrNull()) { invalidNum } - 1
                         ensure(goto in 0..<TOPLIST_PAGES) { outOfRange }
@@ -655,12 +612,12 @@ fun AnimatedVisibilityScope.GalleryListScreen(lub: ListUrlBuilder, navigator: De
     }
 }
 
-private const val TOPLIST_PAGES = 200
+const val TOPLIST_PAGES = 200
 
+context(_: Context)
 @Composable
 @Stable
 private fun getSuitableTitleForUrlBuilder(urlBuilder: ListUrlBuilder, appName: Boolean = true): String? {
-    val context = LocalContext.current
     val keyword = urlBuilder.keyword
     val category = urlBuilder.category
     val mode = urlBuilder.mode
@@ -678,7 +635,7 @@ private fun getSuitableTitleForUrlBuilder(urlBuilder: ListUrlBuilder, appName: B
                 }
             }
             MODE_TAG -> {
-                val canTranslate = Settings.showTagTranslations && EhTagDatabase.isTranslatable(context) && EhTagDatabase.initialized
+                val canTranslate = Settings.showTagTranslations && EhTagDatabase.translatable && EhTagDatabase.initialized
                 wrapTagKeyword(keyword, canTranslate)
             }
             else -> keyword

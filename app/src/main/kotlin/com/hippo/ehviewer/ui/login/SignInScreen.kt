@@ -25,7 +25,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,7 +56,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.window.core.layout.WindowWidthSizeClass
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
@@ -66,15 +65,18 @@ import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.destinations.WebViewSignInScreenDestination
 import com.hippo.ehviewer.ui.openBrowser
 import com.hippo.ehviewer.ui.tools.LocalWindowSizeClass
+import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
+import com.hippo.ehviewer.ui.tools.isExpanded
 import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.util.displayString
 import com.jamal.composeprefs3.ui.ifTrueThen
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.launchIO
 import eu.kanade.tachiyomi.util.lang.withUIContext
 import kotlinx.coroutines.Job
+import moe.tarsin.launchIO
+import moe.tarsin.navigate
 
 @Destination<RootGraph>(start = true)
 @Composable
@@ -173,8 +175,8 @@ fun AnimatedVisibilityScope.SignInScreen(navigator: DestinationsNavigator) = Scr
     }
 
     Box(contentAlignment = Alignment.Center) {
-        when (windowSizeClass.windowWidthSizeClass) {
-            WindowWidthSizeClass.COMPACT, WindowWidthSizeClass.MEDIUM -> {
+        when {
+            !windowSizeClass.isExpanded -> {
                 Column(
                     modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).systemBarsPadding().padding(dimensionResource(id = R.dimen.keyline_margin)),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -212,7 +214,7 @@ fun AnimatedVisibilityScope.SignInScreen(navigator: DestinationsNavigator) = Scr
                     }
                     Row(modifier = Modifier.padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(
-                            onClick = { navigator.navigate(WebViewSignInScreenDestination) },
+                            onClick = { navigate(WebViewSignInScreenDestination) },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(
@@ -245,7 +247,7 @@ fun AnimatedVisibilityScope.SignInScreen(navigator: DestinationsNavigator) = Scr
                     }
                 }
             }
-            WindowWidthSizeClass.EXPANDED -> {
+            else -> {
                 Row(
                     modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).systemBarsPadding().padding(dimensionResource(id = R.dimen.keyline_margin)),
                     verticalAlignment = Alignment.CenterVertically,
@@ -294,7 +296,7 @@ fun AnimatedVisibilityScope.SignInScreen(navigator: DestinationsNavigator) = Scr
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.Center) {
                             TextButton(
-                                onClick = { navigator.navigate(WebViewSignInScreenDestination) },
+                                onClick = { navigate(WebViewSignInScreenDestination) },
                                 modifier = Modifier.padding(horizontal = 4.dp).width(128.dp),
                             ) {
                                 Text(
@@ -330,7 +332,7 @@ fun AnimatedVisibilityScope.SignInScreen(navigator: DestinationsNavigator) = Scr
             }
         }
         if (isProgressIndicatorVisible) {
-            CircularProgressIndicator()
+            CircularWavyProgressIndicator()
         }
     }
 }

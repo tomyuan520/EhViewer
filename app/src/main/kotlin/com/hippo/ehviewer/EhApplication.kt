@@ -21,6 +21,7 @@ import android.content.Context
 import android.os.StrictMode
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.runtime.Composer
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.coroutineScope
 import coil3.EventListener
@@ -100,8 +101,13 @@ class EhApplication :
                     AppCompatDelegate.setDefaultNightMode(mode)
                 }
             }
-            if (!LogcatLogger.isInstalled && Settings.saveCrashLog) {
-                LogcatLogger.install(AndroidLogcatLogger(LogPriority.VERBOSE))
+            LogcatLogger.loggers += AndroidLogcatLogger(LogPriority.VERBOSE)
+            Settings.saveCrashLog.valueFlow().collect {
+                if (it) {
+                    LogcatLogger.install()
+                } else {
+                    LogcatLogger.uninstall()
+                }
             }
         }
         lifecycle.addObserver(lockObserver)
@@ -139,6 +145,7 @@ class EhApplication :
         }
         if (BuildConfig.DEBUG) {
             StrictMode.enableDefaults()
+            Composer.setDiagnosticStackTraceEnabled(true)
         }
     }
 
@@ -208,7 +215,7 @@ class EhApplication :
         val ktorClient by lazy {
             if (isAtLeastSExtension7 && Settings.enableCronet.value) {
                 HttpClient(Cronet) {
-                    engine { configureClient() }
+                    engine { configureClient(Settings.enableQuic.value) }
                     configureCommon()
                 }
             } else {

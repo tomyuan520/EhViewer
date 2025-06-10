@@ -17,7 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,7 +32,6 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import arrow.atomic.Atomic
 import com.hippo.ehviewer.ui.openBrowser
 import com.hippo.ehviewer.ui.settings.PreferenceTokens.PreferenceTextPadding
 import com.hippo.ehviewer.util.ProgressDialog
@@ -44,9 +42,9 @@ import com.jamal.composeprefs3.ui.prefs.SwitchPref
 import com.jamal.composeprefs3.ui.prefs.TextPref
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import com.ramcosta.composedestinations.spec.DirectionDestinationSpec
+import kotlin.concurrent.atomics.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import kotlin.math.roundToInt
 import kotlin.reflect.KMutableProperty0
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -103,16 +101,13 @@ fun SwitchPreference(title: String, summary: String? = null, value: KMutableProp
 }
 
 @Composable
-fun IntSliderPreference(maxValue: Int, minValue: Int = 0, step: Int = maxValue - minValue - 1, showTicks: Boolean = true, title: String, summary: String? = null, value: KMutableProperty0<Int>, enabled: Boolean = true, display: (Int) -> Int = { it }) {
-    var v by remember { mutableIntStateOf(value.get()) }
-    fun set(float: Float) = value.set(float.roundToInt().also { v = it })
-    SliderPref(title = title, summary = summary, defaultValue = v.toFloat(), onValueChangeFinished = ::set, valueRange = minValue.toFloat()..maxValue.toFloat(), showValue = true, steps = step, showTicks = showTicks, enabled = enabled, display = { display(it.roundToInt()).toFloat() })
+fun IntSliderPreference(maxValue: Int, minValue: Int = 0, step: Int = maxValue - minValue - 1, title: String, summary: String? = null, value: KMutableProperty0<Int>, enabled: Boolean = true, display: (Int) -> Int = { it }) {
+    SliderPref(title = title, summary = summary, defaultValue = value.get(), onValueChangeFinished = value::set, valueRange = minValue..maxValue, showValue = true, steps = step, enabled = enabled, display = display)
 }
 
 @Composable
-fun UrlPreference(title: String, url: String) {
-    val context = LocalContext.current
-    Preference(title, url) { context.openBrowser(url) }
+fun UrlPreference(title: String, url: String) = with(LocalContext.current) {
+    Preference(title, url) { openBrowser(url) }
 }
 
 @Composable
@@ -152,8 +147,8 @@ fun WorkPreference(title: String, summary: String? = null, work: suspend Corouti
 @Composable
 fun <I, O> LauncherPreference(title: String, summary: String? = null, contract: ActivityResultContract<I, O>, key: I, work: suspend CoroutineScope.(O) -> Unit) {
     val coroutineScope = rememberCoroutineScope { Dispatchers.IO }
-    val callback = remember { Atomic<(O) -> Unit> {} }
-    val launcher = rememberLauncherForActivityResult(contract = contract) { callback.getAndSet { }.invoke(it) }
+    val callback = remember { AtomicReference<(O) -> Unit> {} }
+    val launcher = rememberLauncherForActivityResult(contract = contract) { callback.exchange { }.invoke(it) }
     var completed by remember { mutableStateOf(true) }
     if (!completed) {
         ProgressDialog()
@@ -161,7 +156,7 @@ fun <I, O> LauncherPreference(title: String, summary: String? = null, contract: 
     Preference(title = title, summary = summary) {
         coroutineScope.launch {
             val o = suspendCoroutine { cont ->
-                callback.set { cont.resume(it) }
+                callback.store { cont.resume(it) }
                 launcher.launch(key)
             }
             completed = false

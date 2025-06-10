@@ -16,7 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
-import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.fetchAndIncrement
 
 val NoopTransitionsVisibilityScope = TransitionsVisibilityScope(emptySet())
 
@@ -24,33 +25,35 @@ val NoopTransitionsVisibilityScope = TransitionsVisibilityScope(emptySet())
 @Stable
 value class TransitionsVisibilityScope(val scopes: Set<AnimatedVisibilityScope>)
 
-context(TransitionsVisibilityScope)
+context(visScope: TransitionsVisibilityScope)
 @Composable
-inline fun <T> togetherWith(scope: AnimatedVisibilityScope, block: @Composable TransitionsVisibilityScope.() -> T) = block(remember(scopes, scope) { TransitionsVisibilityScope(scopes + scope) })
+inline fun <T> togetherWith(scope: AnimatedVisibilityScope, block: @Composable TransitionsVisibilityScope.() -> T) = block(remember(visScope.scopes, scope) { TransitionsVisibilityScope(visScope.scopes + scope) })
 
-context(SharedTransitionScope, TransitionsVisibilityScope, SETNodeGenerator)
+context(shareScope: SharedTransitionScope, visScope: TransitionsVisibilityScope, generator: SETNodeGenerator)
 @Composable
 fun Modifier.sharedBounds(
     key: String,
     enter: EnterTransition = fadeIn(),
     exit: ExitTransition = fadeOut(),
-) = remember(key) { summon(key) }.let { node ->
+) = remember(key) { generator.summon(key) }.let { node ->
     DisposableEffect(key) {
         onDispose {
-            dispose(node)
+            generator.dispose(node)
         }
     }
-    scopes.fold(this) { modifier, scope ->
-        modifier.sharedBounds(
-            rememberSharedContentState("${node.syntheticKey} + ${scope.transition.label}"),
-            scope,
-            enter,
-            exit,
-        )
+    visScope.scopes.fold(this) { modifier, scope ->
+        with(shareScope) {
+            modifier.sharedBounds(
+                rememberSharedContentState("${node.syntheticKey} + ${scope.transition.label}"),
+                scope,
+                enter,
+                exit,
+            )
+        }
     }
 }
 
-context(SharedTransitionScope, TransitionsVisibilityScope, SETNodeGenerator)
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope, _: SETNodeGenerator)
 @Composable
 inline fun SharedElementBox(key: String, shape: Shape, crossinline content: @Composable BoxScope.() -> Unit) {
     val modifier = Modifier.sharedBounds(key = key).clip(shape)
@@ -67,20 +70,19 @@ val SETNode.syntheticKey: String
 
 val listThumbGenerator = SETNodeGenerator()
 val detailThumbGenerator = SETNodeGenerator()
-val noopThumbGenerator = SETNodeGenerator()
 
 fun initSETConnection() {
     listThumbGenerator connectTo detailThumbGenerator
 }
 
-private val atomicIncId = AtomicInteger()
+private val atomicIncId = AtomicInt(0)
 
 class SETNodeGenerator {
     private val tracker = hashMapOf<String, SETNode>()
     private val opposites = mutableListOf<SETNodeGenerator>()
 
     fun summon(contentKey: String): SETNode {
-        val node = opposites.firstNotNullOfOrNull { it.tracker[contentKey] } ?: SETNode(contentKey = contentKey, uniqueID = "${atomicIncId.getAndIncrement()}")
+        val node = opposites.firstNotNullOfOrNull { it.tracker[contentKey] } ?: SETNode(contentKey = contentKey, uniqueID = "${atomicIncId.fetchAndIncrement()}")
         tracker[contentKey] = node
         return node
     }

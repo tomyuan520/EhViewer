@@ -16,12 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
-import coil3.compose.ConstraintsSizeResolver
 import coil3.compose.rememberAsyncImagePainter
-import coil3.compose.rememberConstraintsSizeResolver
-import coil3.request.ImageRequest
 import com.hippo.ehviewer.client.data.GalleryInfo
 import com.hippo.ehviewer.ktbuilder.imageRequest
 import com.hippo.ehviewer.ui.tools.SETNodeGenerator
@@ -32,50 +28,35 @@ import com.hippo.ehviewer.ui.tools.thenIf
 
 @Composable
 @NonRestartableComposable
-fun requestOf(model: GalleryInfo): ImageRequest {
-    val context = LocalContext.current
-    return remember(model) { context.imageRequest(model) }.withSizeResolver()
+fun requestOf(model: GalleryInfo) = with(LocalContext.current) {
+    remember(model) { imageRequest(model) }
 }
 
-@Composable
-@NonRestartableComposable
-fun ImageRequest.withSizeResolver() = if (defined.sizeResolver != null) {
-    this
-} else {
-    val sizeResolver = rememberConstraintsSizeResolver()
-    remember(this, sizeResolver) { newBuilder().size(sizeResolver).build() }
-}
-
-fun Modifier.imageRequest(request: ImageRequest): Modifier {
-    val sizeResolver = request.sizeResolver
-    return if (sizeResolver is ConstraintsSizeResolver) {
-        then(sizeResolver)
-    } else {
-        this
-    }
-}
-
-context(SharedTransitionScope, TransitionsVisibilityScope, SETNodeGenerator)
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope, _: SETNodeGenerator)
 @Composable
 fun EhAsyncCropThumb(
     key: GalleryInfo,
     modifier: Modifier = Modifier,
 ) = SharedElementBox(key = "${key.gid}", shape = ShapeDefaults.Medium) {
     var contentScale by remember(key) { mutableStateOf(ContentScale.Fit) }
-    AsyncImage(
-        model = requestOf(key),
+    val request = requestOf(key)
+    Image(
+        // https://github.com/coil-kt/coil/issues/2959
+        painter = rememberAsyncImagePainter(
+            model = request,
+            onSuccess = {
+                if (it.result.image.shouldCrop) {
+                    contentScale = ContentScale.Crop
+                }
+            },
+        ),
         contentDescription = null,
         modifier = modifier,
-        onSuccess = {
-            if (it.result.image.shouldCrop) {
-                contentScale = ContentScale.Crop
-            }
-        },
         contentScale = contentScale,
     )
 }
 
-context(SharedTransitionScope, TransitionsVisibilityScope, SETNodeGenerator)
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope, _: SETNodeGenerator)
 @Composable
 fun EhThumbCard(
     key: GalleryInfo,
@@ -99,7 +80,7 @@ fun EhThumbCard(
             modifier = Modifier.thenIf(state !is AsyncImagePainter.State.Success) {
                 // Keep applying this when state is `Loading` to avoid cutting off the ripple
                 clickable { if (state is AsyncImagePainter.State.Error) painter.restart() }
-            }.imageRequest(request).fillMaxSize(),
+            }.fillMaxSize(),
             contentScale = contentScale,
         )
     }

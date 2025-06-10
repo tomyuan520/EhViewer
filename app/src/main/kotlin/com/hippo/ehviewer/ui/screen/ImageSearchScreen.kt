@@ -40,9 +40,11 @@ import com.hippo.files.toOkioPath
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.launchUI
 import eu.kanade.tachiyomi.util.lang.withIOContext
-import kotlinx.coroutines.launch
+import moe.tarsin.launch
+import moe.tarsin.launchUI
+import moe.tarsin.navigate
+import moe.tarsin.snackbar
 
 @Destination<RootGraph>
 @Composable
@@ -72,7 +74,7 @@ fun AnimatedVisibilityScope.ImageSearchScreen(navigator: DestinationsNavigator) 
                             )
                         }
                     } else {
-                        launch { showSnackbar(selectImageFirst) }
+                        launch { snackbar(selectImageFirst) }
                     }
                 },
                 modifier = Modifier.snackBarPadding(),

@@ -17,7 +17,6 @@ import com.hippo.ehviewer.client.data.TagNamespace.Male
 import com.hippo.ehviewer.client.data.TagNamespace.Mixed
 import com.hippo.ehviewer.client.data.TagNamespace.Other
 import com.hippo.ehviewer.client.data.TagNamespace.Parody
-import com.hippo.ehviewer.ui.screen.implicit
 import com.hippo.files.read
 import com.hippo.files.write
 import kotlinx.serialization.KSerializer
@@ -56,8 +55,8 @@ fun GalleryInfo.getComicInfo(): ComicInfo {
     with(TagNamespace) {
         when (this@getComicInfo) {
             is GalleryDetail -> tagGroups.forEach { group ->
-                val list = group.tags.filterNot { (text, power, _) -> text == TAG_ORIGINAL || power == PowerStatus.WEAK }.map(GalleryTag::text)
-                when (val ns = group.nameSpace) {
+                val list = group.tags.filterNot { (text, power, _) -> text == TAG_ORIGINAL || power == PowerStatus.Weak }.map(GalleryTag::text)
+                when (val ns = group.namespace) {
                     Artist, Cosplayer -> artists.addAll(list)
                     Group -> groups.addAll(list)
                     Character -> characters.addAll(list)
@@ -116,11 +115,7 @@ fun ComicInfo.toSimpleTags() = listOfNotNull(
     teams,
 ).flatten().ifEmpty { null }
 
-fun ComicInfo.write(file: Path) {
-    file.write {
-        xml.encodeToSink(this, implicit<ComicInfo>())
-    }
-}
+fun writeComicInfo(info: ComicInfo, file: Path) = file.write { xml.encodeToSink(this, info) }
 
 fun readComicInfo(file: Path): ComicInfo? = runCatching {
     file.read {

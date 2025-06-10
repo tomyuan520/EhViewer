@@ -1,15 +1,18 @@
 #![cfg(feature = "jvm")]
 
+use crate::parser::archive::{parse_archive_url, parse_archives, parse_archives_with_funds};
 use crate::parser::config::parse_fav_cat;
+use crate::parser::detail::{parse_event_pane, parse_gallery_detail};
 use crate::parser::fav::parse_fav;
 use crate::parser::home::parse_limit;
 use crate::parser::list::parse_info_list;
+use crate::parser::profile::{parse_profile, parse_profile_url};
 use crate::parser::torrent::parse_torrent_list;
 use crate::EhError;
 use android_logger::Config;
 use anyhow::{ensure, Context, Result};
 use jni::objects::{JByteBuffer, JClass};
-use jni::sys::{jboolean, jint, jobject, JNI_VERSION_1_6};
+use jni::sys::{jboolean, jint, jobject, JNI_TRUE, JNI_VERSION_1_6};
 use jni::{JNIEnv, JavaVM};
 use jni_fn::jni_fn;
 use log::LevelFilter;
@@ -49,6 +52,25 @@ pub fn parseGalleryInfoList(mut env: JNIEnv, _: JClass, buffer: JByteBuffer, lim
 
 #[no_mangle]
 #[allow(non_snake_case)]
+#[jni_fn("com.hippo.ehviewer.client.parser.GalleryDetailParser")]
+pub fn parseGalleryDetail(mut env: JNIEnv, _: JClass, buffer: JByteBuffer, limit: jint) -> jint {
+    let options = ParserOptions::default().track_ids();
+    parse_marshal_inplace_with_options(&mut env, buffer, limit, options, |dom, html| {
+        parse_gallery_detail(dom, html).map(|detail| (detail, parse_event_pane(dom, dom.parser())))
+    })
+}
+
+#[no_mangle]
+#[allow(non_snake_case)]
+#[jni_fn("com.hippo.ehviewer.client.parser.EventPaneParser")]
+pub fn parseEventPane(mut env: JNIEnv, _class: JClass, input: JByteBuffer, limit: jint) -> jint {
+    parse_marshal_inplace(&mut env, input, limit, |dom, _| {
+        Ok(parse_event_pane(dom, dom.parser()))
+    })
+}
+
+#[no_mangle]
+#[allow(non_snake_case)]
 #[jni_fn("com.hippo.ehviewer.client.parser.TorrentParserKt")]
 pub fn parseTorrent(mut env: JNIEnv, _class: JClass, buffer: JByteBuffer, limit: jint) -> jint {
     parse_marshal_inplace(&mut env, buffer, limit, |dom, _| {
@@ -61,6 +83,54 @@ pub fn parseTorrent(mut env: JNIEnv, _class: JClass, buffer: JByteBuffer, limit:
 #[jni_fn("com.hippo.ehviewer.client.parser.UserConfigParser")]
 pub fn parseFavCat(mut env: JNIEnv, _class: JClass, buffer: JByteBuffer, limit: jint) -> jint {
     parse_marshal_inplace(&mut env, buffer, limit, |_, body| Ok(parse_fav_cat(body)))
+}
+
+#[no_mangle]
+#[allow(non_snake_case)]
+#[jni_fn("com.hippo.ehviewer.client.parser.ArchiveParserKt")]
+pub fn parseArchives(
+    mut env: JNIEnv,
+    _class: JClass,
+    buffer: JByteBuffer,
+    limit: jint,
+    parse_funds: jboolean,
+) -> jint {
+    if parse_funds == JNI_TRUE {
+        parse_marshal_inplace(&mut env, buffer, limit, |dom, html| {
+            parse_archives_with_funds(dom, dom.parser(), html)
+        })
+    } else {
+        parse_marshal_inplace(&mut env, buffer, limit, |dom, html| {
+            parse_archives(dom, dom.parser(), html)
+        })
+    }
+}
+
+#[no_mangle]
+#[allow(non_snake_case)]
+#[jni_fn("com.hippo.ehviewer.client.parser.ArchiveParserKt")]
+pub fn parseArchiveUrl(mut env: JNIEnv, _class: JClass, buffer: JByteBuffer, limit: jint) -> jint {
+    parse_marshal_inplace(&mut env, buffer, limit, |dom, html| {
+        parse_archive_url(dom, dom.parser(), html)
+    })
+}
+
+#[no_mangle]
+#[allow(non_snake_case)]
+#[jni_fn("com.hippo.ehviewer.client.parser.ProfileParser")]
+pub fn parseProfileUrl(mut env: JNIEnv, _class: JClass, buffer: JByteBuffer, limit: jint) -> jint {
+    parse_marshal_inplace(&mut env, buffer, limit, |dom, _| {
+        parse_profile_url(dom, dom.parser())
+    })
+}
+
+#[no_mangle]
+#[allow(non_snake_case)]
+#[jni_fn("com.hippo.ehviewer.client.parser.ProfileParser")]
+pub fn parseProfile(mut env: JNIEnv, _class: JClass, buffer: JByteBuffer, limit: jint) -> jint {
+    parse_marshal_inplace(&mut env, buffer, limit, |dom, _| {
+        parse_profile(dom, dom.parser())
+    })
 }
 
 fn deref_mut_direct_bytebuffer<'local>(
@@ -115,9 +185,24 @@ where
     }
 }
 
+#[inline]
 pub fn parse_marshal_inplace<F, R>(env: &mut JNIEnv, str: JByteBuffer, limit: jint, f: F) -> i32
 where
-    F: Fn(&VDom, &str) -> Result<R>,
+    F: Fn(&mut VDom, &str) -> Result<R>,
+    R: Serialize,
+{
+    parse_marshal_inplace_with_options(env, str, limit, ParserOptions::default(), f)
+}
+
+pub fn parse_marshal_inplace_with_options<F, R>(
+    env: &mut JNIEnv,
+    str: JByteBuffer,
+    limit: jint,
+    options: ParserOptions,
+    f: F,
+) -> i32
+where
+    F: Fn(&mut VDom, &str) -> Result<R>,
     R: Serialize,
 {
     jni_throwing(env, |env| {
@@ -126,9 +211,9 @@ where
             // SAFETY: ktor client ensure html content is valid utf-8.
             let html = unsafe { from_utf8_unchecked(&buffer[..limit as usize]) };
 
-            let dom = tl::parse(html, ParserOptions::default())?;
+            let mut dom = tl::parse(html, options)?;
             ensure!(dom.version().is_some(), EhError::Error(html.to_string()));
-            f(&dom, html)?
+            f(&mut dom, html)?
         };
         let mut cursor = Cursor::new(buffer);
         serde_cbor::to_writer(&mut cursor, &value)?;

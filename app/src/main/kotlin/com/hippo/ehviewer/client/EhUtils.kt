@@ -153,6 +153,8 @@ object EhUtils {
 
     val categoryTextColor = Color(0xffe6e0e9)
 
+    val favoriteIconColor = Color(0xffff3040)
+
     fun signOut() {
         EhCookieStore.removeAllCookies()
         Settings.displayName.value = null
@@ -177,10 +179,10 @@ object EhUtils {
         return title.substringBeforeLast('|').trim().ifEmpty { null }
     }
 
-    context(Context)
+    context(ctx: Context)
     suspend fun downloadArchive(galleryDetail: GalleryDetail, archive: Archive) {
         val gid = galleryDetail.gid
-        EhEngine.downloadArchive(gid, galleryDetail.token, archive.res, archive.isHAtH)?.let {
+        EhEngine.downloadArchive(gid, galleryDetail.token, archive.res, archive.isHath)?.let {
             val uri = it.toUri()
             val intent = Intent().apply {
                 action = Intent.ACTION_VIEW
@@ -188,7 +190,7 @@ object EhUtils {
             }
             val name = "$gid-${getSuitableTitle(galleryDetail)}.zip"
             try {
-                startActivity(intent)
+                ctx.startActivity(intent)
                 withUIContext { addTextToClipboard(name, true) }
             } catch (_: ActivityNotFoundException) {
                 val r = DownloadManager.Request(uri)

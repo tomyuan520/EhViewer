@@ -18,14 +18,19 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 
 option(BUILD_TESTING OFF)
-
-set(XZ_PATCH ${CMAKE_CURRENT_LIST_DIR}/0001-Don-t-build-other-binaries.patch)
+option(XZ_DOC OFF)
+option(XZ_LZIP_DECODER OFF)
+option(XZ_MICROLZMA_DECODER OFF)
+option(XZ_MICROLZMA_ENCODER OFF)
+option(XZ_TOOL_LZMADEC OFF)
+option(XZ_TOOL_LZMAINFO OFF)
+option(XZ_TOOL_XZ OFF)
+option(XZ_TOOL_XZDEC OFF)
 FetchContent_Declare(
         liblzma
         GIT_REPOSITORY https://github.com/tukaani-project/xz.git
-        GIT_TAG v5.6.4
+        GIT_TAG v5.8.1
         GIT_SHALLOW 1
-        PATCH_COMMAND git apply --check -R ${XZ_PATCH} || git apply ${XZ_PATCH}
 )
 
 FetchContent_MakeAvailable(liblzma)
@@ -96,7 +101,7 @@ set(LIBARCHIVE_PATCH
 FetchContent_Declare(
         libarchive
         GIT_REPOSITORY https://github.com/libarchive/libarchive.git
-        GIT_TAG v3.7.7
+        GIT_TAG v3.8.1
         GIT_SHALLOW 1
         PATCH_COMMAND git apply --check -R ${LIBARCHIVE_PATCH} || git apply ${LIBARCHIVE_PATCH}
 )
@@ -107,7 +112,7 @@ include_directories(${libarchive_SOURCE_DIR}/libarchive)
 FetchContent_Declare(
         Corrosion
         GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-        GIT_TAG v0.5.1
+        GIT_TAG v0.5.2
         GIT_SHALLOW 1
 )
 

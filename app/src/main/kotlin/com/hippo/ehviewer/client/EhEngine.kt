@@ -27,8 +27,10 @@ import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.data.BaseGalleryInfo
 import com.hippo.ehviewer.client.data.FavListUrlBuilder
 import com.hippo.ehviewer.client.data.GalleryInfo
+import com.hippo.ehviewer.client.exception.CloudflareBypassException
 import com.hippo.ehviewer.client.exception.EhException
 import com.hippo.ehviewer.client.exception.InsufficientFundsException
+import com.hippo.ehviewer.client.exception.NoHathClientException
 import com.hippo.ehviewer.client.exception.NoHitsFoundException
 import com.hippo.ehviewer.client.exception.NotLoggedInException
 import com.hippo.ehviewer.client.exception.ParseException
@@ -36,11 +38,9 @@ import com.hippo.ehviewer.client.parser.ArchiveParser
 import com.hippo.ehviewer.client.parser.EventPaneParser
 import com.hippo.ehviewer.client.parser.FavParserResult
 import com.hippo.ehviewer.client.parser.FavoritesParser
-import com.hippo.ehviewer.client.parser.ForumsParser
 import com.hippo.ehviewer.client.parser.GalleryApiParser
 import com.hippo.ehviewer.client.parser.GalleryDetailParser
 import com.hippo.ehviewer.client.parser.GalleryListParser
-import com.hippo.ehviewer.client.parser.GalleryNotAvailableParser
 import com.hippo.ehviewer.client.parser.GalleryPageParser
 import com.hippo.ehviewer.client.parser.GalleryTokenApiParser
 import com.hippo.ehviewer.client.parser.HomeParser
@@ -59,9 +59,9 @@ import com.hippo.ehviewer.util.ReadableTime
 import com.hippo.ehviewer.util.bodyAsUtf8Text
 import com.hippo.ehviewer.util.ensureSuccess
 import eu.kanade.tachiyomi.util.system.logcat
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.HttpStatement
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.HttpStatusCode
 import io.ktor.utils.io.pool.DirectByteBufferPool
 import io.ktor.utils.io.pool.useInstance
 import io.ktor.utils.io.readAvailable
@@ -99,9 +99,11 @@ fun Either<String, ByteBuffer>.saveParseError(e: Throwable) {
     }
 }
 
-fun rethrowExactly(status: HttpStatusCode, body: Either<String, ByteBuffer>, e: Throwable): Nothing {
+fun rethrowExactly(response: HttpResponse, body: Either<String, ByteBuffer>, e: Throwable): Nothing {
     // Don't translate coroutine cancellation
     if (e is CancellationException) throw e
+
+    if (response.headers["cf-mitigated"] == "challenge") throw CloudflareBypassException()
 
     // Check sad panda (without panda)
     val empty = body.fold(
@@ -118,25 +120,27 @@ fun rethrowExactly(status: HttpStatusCode, body: Either<String, ByteBuffer>, e: 
 
     // Check Gallery Not Available
     body.onLeft {
-        if ("Gallery Not Available - " in it) {
-            val error = GalleryNotAvailableParser.parse(it)
-            if (!error.isNullOrBlank()) {
-                throw EhException(error)
-            }
+        if ("Gallery Not Available - " in it) throw e
+    }
+
+    // Check parse error thrown by rust
+    val cause = e.cause
+    if (e is ParseException && cause is RuntimeException) {
+        when (val message = cause.message) {
+            "0" -> throw NoHitsFoundException()
+            "1" -> throw EhException(R.string.gallery_list_empty_hit_subscription)
+            "2" -> throw NotLoggedInException()
+            "3" -> throw NoHathClientException()
+            "4" -> throw InsufficientFundsException()
+            is String if message.startsWith('5') -> throw EhException(message.drop(1))
         }
     }
 
     // Check bad response code
-    status.ensureSuccess()
+    response.status.ensureSuccess()
 
     if (e is ParseException || e is SerializationException) {
         body.onLeft { if ("<" !in it) throw EhException(it) }
-        when (val message = e.cause?.message) {
-            "0" -> throw NoHitsFoundException()
-            "1" -> throw EhException(R.string.gallery_list_empty_hit_subscription)
-            "2" -> throw NotLoggedInException()
-            is String if message.startsWith('3') -> throw EhException(message.drop(1))
-        }
         if (Settings.saveParseErrorBody) body.saveParseError(e)
         throw EhException(appCtx.getString(R.string.error_parse_error), e)
     }
@@ -152,7 +156,7 @@ suspend inline fun <T> HttpStatement.fetchUsingAsText(crossinline block: suspend
     runSuspendCatching {
         block(body)
     }.onFailure {
-        rethrowExactly(response.status, body.left(), it)
+        rethrowExactly(response, body.left(), it)
     }.getOrThrow()
 }
 
@@ -164,7 +168,7 @@ suspend inline fun <T> HttpStatement.fetchUsingAsByteBuffer(crossinline block: s
             block(buffer)
         }.onFailure {
             buffer.rewind()
-            rethrowExactly(response.status, buffer.right(), it)
+            rethrowExactly(response, buffer.right(), it)
         }.getOrThrow()
     }
 }
@@ -188,7 +192,7 @@ object EhEngine {
     suspend fun getArchiveList(url: String, gid: Long, token: String): ArchiveParser.Result {
         val funds = if (EhUtils.isExHentai) getFunds() else null
         return ehRequest(url, EhUrl.getGalleryDetailUrl(gid, token))
-            .fetchUsingAsText(ArchiveParser::parse.partially2(funds))
+            .fetchUsingAsByteBuffer(ArchiveParser::parse.partially2(funds))
     }
 
     suspend fun getImageLimits() = parZip(
@@ -200,11 +204,11 @@ object EhEngine {
     private suspend fun getFunds() = ehRequest(EhUrl.URL_FUNDS).fetchUsingAsText(HomeParser::parseFunds)
 
     suspend fun getNews(parse: Boolean) = ehRequest(EhUrl.URL_NEWS, EhUrl.REFERER_E)
-        .fetchUsingAsText { if (parse) EventPaneParser.parse(this) else null }
+        .fetchUsingAsByteBuffer { if (parse) EventPaneParser.parse(this) else null }
 
     suspend fun getProfile(): ProfileParser.Result {
-        val url = ehRequest(EhUrl.URL_FORUMS).fetchUsingAsText(ForumsParser::parse)
-        return ehRequest(url, EhUrl.URL_FORUMS).fetchUsingAsText(ProfileParser::parse)
+        val url = ehRequest(EhUrl.URL_FORUMS).fetchUsingAsByteBuffer(ProfileParser::parseProfileUrl)
+        return ehRequest(url, EhUrl.URL_FORUMS).fetchUsingAsByteBuffer(ProfileParser::parse)
     }
 
     suspend fun getUConfig(url: String = EhUrl.uConfigUrl) {
@@ -230,13 +234,16 @@ object EhEngine {
         .apply { galleryInfoList.fillInfo(url, true) }
         .takeUnless { it.galleryInfoList.isEmpty() } ?: GalleryListParser.emptyResult
 
-    suspend fun getGalleryDetail(url: String) = ehRequest(url, EhUrl.referer).fetchUsingAsText {
-        val eventPane = EventPaneParser.parse(this)
-        if (eventPane != null) {
+    suspend fun getGalleryDetail(url: String) = ehRequest(url, EhUrl.referer).fetchUsingAsByteBuffer(GalleryDetailParser::parseRust).run {
+        event?.let {
             Settings.lastDawnDays = today
-            showEventNotification(eventPane)
+            showEventNotification(it)
         }
-        GalleryDetailParser.parse(this)
+        detail.apply {
+            // Fill info for database
+            fillInfo()
+            filterComments()
+        }
     }
 
     suspend fun getPreviewList(url: String) = ehRequest(url, EhUrl.referer).fetchUsingAsText {
@@ -306,12 +313,12 @@ object EhEngine {
     suspend fun getFavoriteNote(gid: Long, token: String) = ehRequest(EhUrl.getAddFavorites(gid, token), EhUrl.getGalleryDetailUrl(gid, token))
         .fetchUsingAsText(FavoritesParser::parseNote)
 
-    suspend fun downloadArchive(gid: Long, token: String, res: String, isHAtH: Boolean): String? {
+    suspend fun downloadArchive(gid: Long, token: String, res: String, isHath: Boolean): String? {
         val url = EhUrl.getDownloadArchive(gid, token)
         val referer = EhUrl.getGalleryDetailUrl(gid, token)
         val request = ehRequest(url, referer, EhUrl.origin) {
             formBody {
-                if (isHAtH) {
+                if (isHath) {
                     append("hathdl_xres", res)
                 } else {
                     append("dltype", res)
@@ -323,12 +330,12 @@ object EhEngine {
                 }
             }
         }
-        var result = request.fetchUsingAsText(ArchiveParser::parseArchiveUrl)
-        if (!isHAtH) {
+        var result = request.fetchUsingAsByteBuffer(ArchiveParser::parseArchiveUrl)
+        if (!isHath) {
             if (result == null) {
                 // Wait for the server to prepare archives
                 delay(1000)
-                result = request.fetchUsingAsText(ArchiveParser::parseArchiveUrl)
+                result = request.fetchUsingAsByteBuffer(ArchiveParser::parseArchiveUrl)
                 if (result == null) throw EhException("Archive unavailable")
             }
             return result
@@ -392,10 +399,10 @@ object EhEngine {
                 jsonBody {
                     put("method", "gdata")
                     array("gidlist") {
-                        it.forEach {
+                        it.forEach { info ->
                             addJsonArray {
-                                add(it.gid)
-                                add(it.token)
+                                add(info.gid)
+                                add(info.token)
                             }
                         }
                     }

@@ -107,6 +107,7 @@ object Settings : DataStorePreferences(null) {
     var favCloudCount by intPref("fav_cloud", 0).emitTo(_favFlow)
 
     val gallerySite = intPref("gallery_site_2", 0).observed { updateWhenGallerySiteChanges() }
+    val launchPage = intPref("launch_page_2", 0)
     val listMode = intPref("list_mode_2", 0)
     val detailSize = intPref("detail_size_2", 0)
     val thumbColumns = intPref("thumb_columns", 3)
@@ -122,8 +123,11 @@ object Settings : DataStorePreferences(null) {
     val showGalleryPages = boolPref("show_gallery_pages", true)
     val qSSaveProgress = boolPref("qs_save_progress", true)
     val security = boolPref("require_unlock", false)
+    val saveCrashLog = boolPref("save_crash_log", true)
     val animateItems = boolPref("animate_items", true)
     val enableCronet = boolPref("enable_cronet", true)
+    val enableQuic = boolPref("enable_quic", true)
+    val desktopSite = boolPref("desktop_site", true)
     val displayName = stringOrNullPref("display_name", null)
     val avatar = stringOrNullPref("avatar", null)
     val recentDownloadLabel = stringOrNullPref("recent_download_label", null)
@@ -142,7 +146,6 @@ object Settings : DataStorePreferences(null) {
     var timeoutSpeed by intPref("timeout_speed_level", 6)
     var theme by intPref("theme_2", -1).observed { updateWhenThemeChanges() }
     var readCacheSize by intPref("read_cache_size_2", 640)
-    var launchPage by intPref("launch_page_2", 0)
     var commentThreshold by intPref("comment_threshold", -100)
     var hardwareBitmapThreshold by intPref("hardware_bitmap_threshold", 16384)
     var showComments by boolPref("show_gallery_comments", true)
@@ -157,7 +160,6 @@ object Settings : DataStorePreferences(null) {
     var mediaScan by boolPref("media_scan", false).observed { updateWhenKeepMediaStatusChanges() }
     var hasDefaultDownloadLabel by boolPref("has_default_download_label", false)
     var saveParseErrorBody by boolPref("save_parse_error_body", true)
-    var saveCrashLog by boolPref("save_crash_log", true)
     var removeImageFiles by boolPref("include_pic", true)
     var harmonizeCategoryColor by boolPref("harmonize_category_color", true)
     var preloadThumbAggressively by boolPref("preload_thumb_aggressively", false)
