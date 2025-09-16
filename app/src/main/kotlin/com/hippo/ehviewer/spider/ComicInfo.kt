@@ -88,7 +88,7 @@ fun GalleryInfo.getComicInfo(): ComicInfo {
 
     val galleryInfo = ComicInfo(
         series =
-        if (Settings.saveJpnAsInfoTitle) {
+        if (Settings.saveJpnAsInfoTitle.value) {
             titleJpn?.ifBlank { title }
         } else {
             title
