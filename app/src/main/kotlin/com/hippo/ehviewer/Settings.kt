@@ -133,6 +133,7 @@ object Settings : DataStorePreferences(null) {
     val displayName = stringOrNullPref("display_name")
     val avatar = stringOrNullPref("avatar")
     val recentDownloadLabel = stringOrNullPref("recent_download_label")
+    val saveJpnAsInfoTitle = boolPref("save_jpn_as_info_title", false)
 
     var downloadScheme by stringOrNullPref("image_scheme")
     var downloadAuthority by stringOrNullPref("image_authority")
@@ -143,7 +144,6 @@ object Settings : DataStorePreferences(null) {
     var appLinkVerifyTip by boolPref("app_link_verify_tip", false)
     var hasDefaultDownloadLabel by boolPref("has_default_download_label", false)
     var removeImageFiles by boolPref("include_pic", true)
-    var saveJpnAsInfoTitle by boolPref("save_jpn_as_info_title", false)
     var recentFavCat by intPref("recent_fav_cat", FavListUrlBuilder.FAV_CAT_LOCAL)
     var clipboardTextHashCode by intPref("clipboard_text_hash_code", 0)
     var requestNewsTime by intPref("request_news_time", 0).observed { updateWhenRequestNewsChanges() }
