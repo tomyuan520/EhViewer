@@ -42,10 +42,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import me.saket.telephoto.zoomable.OverzoomEffect
+import me.saket.telephoto.zoomable.Viewport
+import me.saket.telephoto.zoomable.ZoomLimit
 import me.saket.telephoto.zoomable.ZoomSpec
 import me.saket.telephoto.zoomable.ZoomableContentLocation
 import me.saket.telephoto.zoomable.ZoomableState
 import me.saket.telephoto.zoomable.rememberZoomableState
+import me.saket.telephoto.zoomable.spatial.CoordinateSpace
 import me.saket.telephoto.zoomable.zoomable
 
 @Composable
@@ -171,7 +175,9 @@ private fun PageContainer(
                 val zoomFraction = snapshotFlow { zoomableState.zoomFraction }.first { it != null }
                 if (zoomFraction == 0f) {
                     delay(500)
-                    val contentSize = zoomableState.transformedContentBounds.size
+                    val contentSize = with(zoomableState.coordinateSystem) {
+                        unscaledContentBounds(false).sizeIn(CoordinateSpace.Viewport)
+                    }
                     val scale = ContentScale.FillHeight.computeScaleFactor(contentSize, layoutSize)
                     val targetScale = scale.scaleX.coerceAtMost(zoomableState.zoomSpec.maximum.factor)
                     val offset = alignment.align(0, layoutSize.width.toInt(), LayoutDirection.Ltr)
@@ -258,7 +264,11 @@ private inline fun ZoomableState?.canPan(getRemaining: (Rect) -> Float): Boolean
     contract {
         returns(true) implies (this@canPan != null)
     }
-    return this != null && Settings.navigateToPan.value && getRemaining(transformedContentBounds) > 1f
+    return this != null && Settings.navigateToPan.value &&
+        getRemaining(with(coordinateSystem) { contentBounds(false).rectIn(CoordinateSpace.Viewport) }) > 1f
 }
 
-private val PagerZoomSpec = ZoomSpec(maxZoomFactor = 5f)
+private val PagerZoomSpec = ZoomSpec(
+    maximum = ZoomLimit(factor = 5f),
+    minimum = ZoomLimit(factor = 1f, overzoomEffect = OverzoomEffect.Disabled),
+)

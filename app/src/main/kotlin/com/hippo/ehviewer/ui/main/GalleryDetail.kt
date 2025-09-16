@@ -30,15 +30,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.icons.EhIcons
+import com.ehviewer.core.ui.icons.big.SadAndroid
+import com.ehviewer.core.ui.util.TransitionsVisibilityScope
+import com.ehviewer.core.ui.util.detailThumbGenerator
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.client.data.GalleryDetail
 import com.hippo.ehviewer.client.data.GalleryInfo
-import com.hippo.ehviewer.icons.EhIcons
-import com.hippo.ehviewer.icons.big.SadAndroid
-import com.hippo.ehviewer.ui.tools.TransitionsVisibilityScope
-import com.hippo.ehviewer.ui.tools.detailThumbGenerator
 
 @Composable
 fun GalleryDetailHeaderInfoCard(
@@ -75,8 +76,8 @@ fun GalleryDetailHeaderInfoCard(
     }
 }
 
-context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 @Composable
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 fun GalleryDetailHeaderCard(
     info: GalleryInfo,
     onInfoCardClick: () -> Unit,
@@ -90,29 +91,29 @@ fun GalleryDetailHeaderCard(
             EhThumbCard(
                 key = remember(info.gid) { info },
                 modifier = Modifier.size(
-                    dimensionResource(id = R.dimen.gallery_detail_thumb_width),
-                    dimensionResource(id = R.dimen.gallery_detail_thumb_height),
+                    dimensionResource(id = com.hippo.ehviewer.R.dimen.gallery_detail_thumb_width),
+                    dimensionResource(id = com.hippo.ehviewer.R.dimen.gallery_detail_thumb_height),
                 ),
             )
         }
         Spacer(modifier = Modifier.weight(0.5F))
         Column(
-            modifier = Modifier.height(dimensionResource(id = R.dimen.gallery_detail_thumb_height)),
+            modifier = Modifier.height(dimensionResource(id = com.hippo.ehviewer.R.dimen.gallery_detail_thumb_height)),
             horizontalAlignment = Alignment.End,
         ) {
             (info as? GalleryDetail)?.let {
                 GalleryDetailHeaderInfoCard(
                     detail = it,
                     onClick = onInfoCardClick,
-                    modifier = Modifier.padding(top = 8.dp, end = dimensionResource(id = R.dimen.keyline_margin)),
+                    modifier = Modifier.padding(top = 8.dp, end = dimensionResource(id = com.hippo.ehviewer.R.dimen.keyline_margin)),
                 )
             }
             Spacer(modifier = Modifier.weight(1F))
             val categoryText = EhUtils.getCategory(info.category).uppercase()
             AssistChip(
                 onClick = onCategoryChipClick,
-                label = { Text(text = categoryText, maxLines = 1) },
-                modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.keyline_margin)),
+                label = { Text(text = categoryText, overflow = TextOverflow.Visible, softWrap = false, maxLines = 1) },
+                modifier = Modifier.padding(horizontal = dimensionResource(id = com.hippo.ehviewer.R.dimen.keyline_margin)),
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Default.Label,
@@ -123,8 +124,8 @@ fun GalleryDetailHeaderCard(
             val uploaderText = info.uploader.orEmpty()
             AssistChip(
                 onClick = onUploaderChipClick,
-                label = { Text(text = uploaderText, maxLines = 1) },
-                modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.keyline_margin)),
+                label = { Text(text = uploaderText, overflow = TextOverflow.Visible, softWrap = false, maxLines = 1) },
+                modifier = Modifier.padding(horizontal = dimensionResource(id = com.hippo.ehviewer.R.dimen.keyline_margin)),
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.NoAccounts,

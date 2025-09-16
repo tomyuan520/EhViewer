@@ -16,9 +16,11 @@ import androidx.compose.material.icons.filled.NoAccounts
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -41,7 +43,11 @@ import arrow.core.none
 import arrow.core.some
 import coil3.compose.AsyncImage
 import coil3.network.HttpException
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.RollingNumber
+import com.ehviewer.core.ui.component.RollingNumberPlaceholder
+import com.ehviewer.core.util.launch
+import com.ehviewer.core.util.launchIO
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUtils
@@ -63,8 +69,6 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import moe.tarsin.coroutines.runSwallowingWithUI
-import moe.tarsin.launch
-import moe.tarsin.launchIO
 
 private val limitScope = CoroutineScope(Dispatchers.IO)
 private val refreshEvent = MutableSharedFlow<Unit>()
@@ -82,8 +86,8 @@ private val limitFlow: StateFlow<Result> = refreshEvent.conflate()
     .let { src -> merge(src, invalidateEvent.map { none() }) }
     .stateIn(limitScope, SharingStarted.Eagerly, none())
 
-context(_: CoroutineScope, _: DialogState, _: SnackbarHostState, _: DestinationsNavigator)
 @Composable
+context(_: CoroutineScope, _: DialogState, _: SnackbarHostState, _: DestinationsNavigator)
 fun AvatarIcon() {
     val hasSignedIn by Settings.hasSignedIn.collectAsState()
     if (hasSignedIn) {
@@ -105,7 +109,7 @@ fun AvatarIcon() {
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 CircularWavyProgressIndicator()
-                                Spacer(modifier = Modifier.size(dimensionResource(id = R.dimen.keyline_margin)))
+                                Spacer(modifier = Modifier.size(dimensionResource(id = com.hippo.ehviewer.R.dimen.keyline_margin)))
                                 Text(text = placeholder)
                             }
                         }
@@ -157,6 +161,7 @@ fun AvatarIcon() {
                                                         }
                                                     }
                                                 },
+                                                shapes = ButtonDefaults.shapes(),
                                                 modifier = Modifier.align(Alignment.CenterHorizontally),
                                             ) {
                                                 Icon(
@@ -173,6 +178,7 @@ fun AvatarIcon() {
                     }
                 }
             },
+            shapes = IconButtonDefaults.shapes(),
         ) {
             val avatar by Settings.avatar.collectAsState()
             AnimatedContent(targetState = avatar == null) { noAvatar ->
@@ -206,6 +212,7 @@ fun AvatarIcon() {
                     EhUtils.signOut()
                 }
             },
+            shapes = IconButtonDefaults.shapes(),
         ) {
             Icon(imageVector = Icons.Default.NoAccounts, contentDescription = null)
         }

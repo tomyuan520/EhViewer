@@ -35,8 +35,10 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.LabeledCheckbox
+import com.ehviewer.core.util.withIOContext
 import com.hippo.ehviewer.EhDB
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUtils
@@ -54,7 +56,6 @@ import com.hippo.ehviewer.download.tempDownloadDir
 import com.hippo.ehviewer.ui.destinations.ReaderScreenDestination
 import com.hippo.ehviewer.ui.reader.ReaderScreenArgs
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.LabeledCheckbox
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.awaitResult
 import com.hippo.ehviewer.ui.tools.awaitSelectDate
@@ -75,10 +76,9 @@ import com.hippo.files.exists
 import com.hippo.files.isDirectory
 import com.hippo.files.write
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.withIOContext
+import kotlin.time.Clock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -100,10 +100,10 @@ private fun ensureNoMediaFile(downloadDir: Path) {
 
 private val lck = Mutex()
 
-suspend fun keepNoMediaFileStatus(downloadDir: Path = downloadLocation) {
+suspend fun keepNoMediaFileStatus(downloadDir: Path = downloadLocation, mediaScan: Boolean = Settings.mediaScan.value) {
     if (downloadDir.isDirectory) {
         lck.withLock {
-            if (Settings.mediaScan) {
+            if (mediaScan) {
                 removeNoMediaFile(downloadDir)
             } else {
                 ensureNoMediaFile(downloadDir)
@@ -114,7 +114,7 @@ suspend fun keepNoMediaFileStatus(downloadDir: Path = downloadLocation) {
 
 fun getFavoriteIcon(favorited: Boolean) = if (favorited) Icons.Default.Favorite else Icons.Default.FavoriteBorder
 
-context(_: DialogState, context: MainActivity)
+context(_: DialogState, _: MainActivity)
 suspend fun startDownload(forceDefault: Boolean, vararg galleryInfos: BaseGalleryInfo) {
     if (isAtLeastT) {
         requestPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -181,7 +181,7 @@ suspend fun modifyFavorites(galleryInfo: BaseGalleryInfo): Boolean {
     val localFavorited = EhDB.containLocalFavorites(galleryInfo.gid)
     if (Settings.hasSignedIn.value) {
         val isFavorited = galleryInfo.favoriteSlot != NOT_FAVORITED
-        val defaultFavSlot = Settings.defaultFavSlot
+        val defaultFavSlot = Settings.defaultFavSlot.value
         if (defaultFavSlot == -2) {
             val localFav = getFavoriteIcon(localFavorited) to appCtx.getString(R.string.local_favorites)
             val cloudFav = Settings.favCat.mapIndexed { index, name ->

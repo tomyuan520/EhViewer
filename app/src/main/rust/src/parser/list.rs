@@ -1,9 +1,9 @@
 use crate::EhError;
+use crate::{EHGT_PREFIX, EX_PREFIX};
 use crate::{get_element_by_id, get_vdom_first_element_by_class_name};
 use crate::{get_first_element_by_class_name, query_childs_first_match_attr};
 use crate::{get_node_attr, get_node_handle_attr, regex};
-use crate::{EHGT_PREFIX, EX_PREFIX};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use quick_xml::escape::unescape;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -96,11 +96,8 @@ fn parse_uploader_and_pages(str: &str) -> (Option<String>, bool, i32) {
         regex!(r#"<a href="https://e[x-]hentai.org/uploader/.*?">(.*?)</a>|(\(Disowned\))"#)
             .captures(str)
             .map(|grp| {
-                grp.get(1)
-                    .or_else(|| grp.get(2))
-                    .unwrap()
-                    .as_str()
-                    .to_string()
+                let str = grp.get(1).or_else(|| grp.get(2)).unwrap().as_str();
+                unescape(str).as_deref().unwrap_or(str).to_string()
             });
     let pages = match regex!(r"<div>(\d+) pages</div>").captures(str) {
         None => 0,
@@ -155,7 +152,8 @@ fn parse_gallery_info(node: &Node, parser: &Parser) -> Option<BaseGalleryInfo> {
             None => ("".to_string(), None),
             Some(node) => (
                 node.inner_text(parser).trim().to_string(),
-                get_node_attr(node, "title").map(str::to_string),
+                get_node_attr(node, "title")
+                    .map(|s| unescape(s).as_deref().unwrap_or(s).to_string()),
             ),
         };
     let ir = get_first_element_by_class_name(node, parser, "ir")?
@@ -168,8 +166,11 @@ fn parse_gallery_info(node: &Node, parser: &Parser) -> Option<BaseGalleryInfo> {
             None => (None, false, 0),
             Some(node) => parse_uploader_and_pages(&node.get(parser)?.inner_html(parser)),
         };
-    let favorite_note = get_element_by_id(node, parser, format!("favnote_{gid}").as_str())
-        .map(|e| e.inner_text(parser).to_string());
+    let favorite_note =
+        get_element_by_id(node, parser, format!("favnote_{gid}").as_str()).map(|e| {
+            let str = e.inner_text(parser);
+            unescape(&str).as_deref().unwrap_or(&str).to_string()
+        });
     Some(BaseGalleryInfo {
         gid,
         token,
@@ -193,48 +194,46 @@ fn parse_gallery_info(node: &Node, parser: &Parser) -> Option<BaseGalleryInfo> {
     })
 }
 
-#[allow(dead_code)]
-pub fn parse_info_list(dom: &VDom, parser: &Parser, str: &str) -> Result<GalleryListResult> {
-    if str.contains("<p>You do not have any watched tags") {
-        bail!(EhError::NoWatched)
-    }
-    if str.contains("No hits found</p>") || str.contains("No unfiltered results") {
-        let e = get_vdom_first_element_by_class_name(dom, "searchwarn")
-            .map_or(EhError::NoHits, |n| {
-                EhError::Error(n.inner_text(parser).to_string())
-            });
+pub fn parse_info_list(dom: &VDom, parser: &Parser) -> Result<GalleryListResult> {
+    if let Some(n) = get_vdom_first_element_by_class_name(dom, "searchwarn") {
+        let text = n.inner_text(parser);
+        let e = if text.contains("You do not have any watched tags") {
+            EhError::NoWatched
+        } else {
+            EhError::Error(text.to_string())
+        };
         bail!(e)
     }
-    let f = || {
-        let itg = get_vdom_first_element_by_class_name(dom, "itg")?;
-        let children = itg.children()?;
-        let iter = children.top().iter();
-        let info: Vec<BaseGalleryInfo> = iter
-            .filter_map(|x| parse_gallery_info(x.get(parser)?, parser))
-            .collect();
-        let prev = dom.get_element_by_id("uprev").and_then(|e| {
-            let str = get_node_handle_attr(&e, parser, "href")?;
-            Some(
-                regex!("prev=(\\d+(-\\d+)?)")
-                    .captures(str)?
-                    .index(1)
-                    .to_string(),
-            )
-        });
-        let next = dom.get_element_by_id("unext").and_then(|e| {
-            let str = get_node_handle_attr(&e, parser, "href")?;
-            Some(
-                regex!("next=(\\d+(-\\d+)?)")
-                    .captures(str)?
-                    .index(1)
-                    .to_string(),
-            )
-        });
-        (!info.is_empty()).then_some(GalleryListResult {
-            prev,
-            next,
-            galleryInfoList: info,
+    let info = get_vdom_first_element_by_class_name(dom, "itg")
+        .map(|itg| {
+            let children = itg.children().unwrap();
+            let iter = children.top().iter();
+            iter.filter_map(|x| parse_gallery_info(x.get(parser)?, parser))
+                .collect::<Vec<_>>()
         })
-    };
-    f().context("No content")
+        .filter(|v| !v.is_empty())
+        .context(EhError::NoHits)?;
+    let prev = dom.get_element_by_id("uprev").and_then(|e| {
+        let str = get_node_handle_attr(&e, parser, "href")?;
+        Some(
+            regex!("prev=(\\d+(-\\d+)?)")
+                .captures(str)?
+                .index(1)
+                .to_string(),
+        )
+    });
+    let next = dom.get_element_by_id("unext").and_then(|e| {
+        let str = get_node_handle_attr(&e, parser, "href")?;
+        Some(
+            regex!("next=(\\d+(-\\d+)?)")
+                .captures(str)?
+                .index(1)
+                .to_string(),
+        )
+    });
+    Ok(GalleryListResult {
+        prev,
+        next,
+        galleryInfoList: info,
+    })
 }

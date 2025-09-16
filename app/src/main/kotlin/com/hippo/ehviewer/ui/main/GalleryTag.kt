@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,15 +31,15 @@ import com.hippo.ehviewer.client.data.VoteStatus
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.ui.tools.includeFontPadding
 
-context(_: Context)
 @Composable
+context(_: Context)
 fun GalleryTags(
     tagGroups: List<GalleryTagGroup>,
     onTagClick: (String) -> Unit,
     onTagLongClick: (String, String, VoteStatus) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val canTranslate = Settings.showTagTranslations && EhTagDatabase.translatable && EhTagDatabase.initialized
+    val canTranslate = Settings.showTagTranslations.value && EhTagDatabase.translatable && EhTagDatabase.initialized
     val ehTags = EhTagDatabase.takeIf { canTranslate }
     fun TagNamespace.translate() = ehTags?.getTranslation(tag = value) ?: value
     fun String.translate(ns: TagNamespace) = ehTags?.getTranslation(prefix = ns.prefix, tag = this) ?: this
@@ -103,7 +104,7 @@ private fun BaseRoundText(
         Text(
             text = text,
             modifier = modifier.padding(horizontal = 12.dp, vertical = 4.dp).width(IntrinsicSize.Max),
-            color = MaterialTheme.colorScheme.onSurface.let { if (weak) it.copy(0.5F) else it },
+            color = LocalContentColor.current.let { if (weak) it.copy(0.5F) else it },
             style = MaterialTheme.typography.labelLarge.includeFontPadding,
         )
     }

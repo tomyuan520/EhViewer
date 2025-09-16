@@ -32,7 +32,9 @@ import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.SwipeToDismissBoxDefaults
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -49,7 +51,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,8 +69,22 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import arrow.core.raise.ensure
 import arrow.core.raise.ensureNotNull
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.FAB_ANIMATE_TIME
+import com.ehviewer.core.ui.component.FabLayout
+import com.ehviewer.core.ui.component.FastScrollLazyColumn
+import com.ehviewer.core.ui.component.LocalSideSheetState
+import com.ehviewer.core.ui.component.ProvideSideSheetContent
+import com.ehviewer.core.ui.icons.EhIcons
+import com.ehviewer.core.ui.icons.filled.GoTo
+import com.ehviewer.core.ui.util.Await
+import com.ehviewer.core.ui.util.asyncState
+import com.ehviewer.core.ui.util.thenIf
+import com.ehviewer.core.util.launch
+import com.ehviewer.core.util.launchIO
+import com.ehviewer.core.util.onEachLatest
+import com.ehviewer.core.util.withUIContext
 import com.hippo.ehviewer.EhDB
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.asMutableState
 import com.hippo.ehviewer.client.EhTagDatabase
@@ -86,46 +101,32 @@ import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser
 import com.hippo.ehviewer.client.parser.GalleryPageUrlParser
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.dao.QuickSearch
-import com.hippo.ehviewer.icons.EhIcons
-import com.hippo.ehviewer.icons.filled.GoTo
 import com.hippo.ehviewer.ui.DrawerHandle
-import com.hippo.ehviewer.ui.LocalSideSheetState
-import com.hippo.ehviewer.ui.ProvideSideSheetContent
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.awaitSelectDate
 import com.hippo.ehviewer.ui.destinations.ProgressScreenDestination
 import com.hippo.ehviewer.ui.doGalleryInfoAction
 import com.hippo.ehviewer.ui.main.AdvancedSearchOption
 import com.hippo.ehviewer.ui.main.AvatarIcon
-import com.hippo.ehviewer.ui.main.FAB_ANIMATE_TIME
-import com.hippo.ehviewer.ui.main.FabLayout
 import com.hippo.ehviewer.ui.main.GalleryInfoGridItem
 import com.hippo.ehviewer.ui.main.GalleryInfoListItem
 import com.hippo.ehviewer.ui.main.GalleryList
 import com.hippo.ehviewer.ui.main.SearchFilter
-import com.hippo.ehviewer.ui.tools.Await
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.FastScrollLazyColumn
 import com.hippo.ehviewer.ui.tools.HapticFeedbackType
-import com.hippo.ehviewer.ui.tools.asyncState
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
 import com.hippo.ehviewer.ui.tools.awaitInputText
 import com.hippo.ehviewer.ui.tools.awaitInputTextWithCheckBox
 import com.hippo.ehviewer.ui.tools.rememberHapticFeedback
 import com.hippo.ehviewer.ui.tools.rememberMutableStateInDataStore
-import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.util.FavouriteStatusRouter
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import com.ramcosta.composedestinations.spec.Direction
-import eu.kanade.tachiyomi.util.lang.withUIContext
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
-import moe.tarsin.coroutines.onEachLatest
-import moe.tarsin.launch
-import moe.tarsin.launchIO
 import moe.tarsin.navigate
 import moe.tarsin.snackbar
 import moe.tarsin.string
@@ -180,6 +181,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
     }
 
     val density = LocalDensity.current
+    val positionalThreshold = SwipeToDismissBoxDefaults.positionalThreshold
     val listState = rememberLazyGridState()
     val gridState = rememberLazyStaggeredGridState()
     val isTopList = remember(urlBuilder) { urlBuilder.mode == MODE_TOPLIST }
@@ -192,8 +194,8 @@ fun AnimatedVisibilityScope.GalleryListScreen(
     FavouriteStatusRouter.Observe(data)
     val listMode by Settings.listMode.collectAsState()
 
-    val entries = stringArrayResource(id = R.array.toplist_entries)
-    val values = stringArrayResource(id = R.array.toplist_values)
+    val entries = stringArrayResource(id = com.hippo.ehviewer.R.array.toplist_entries)
+    val values = stringArrayResource(id = com.hippo.ehviewer.R.array.toplist_values)
     val toplists = remember { entries zip values }
     val quickSearchName = getSuitableTitleForUrlBuilder(urlBuilder, false)
     var saveProgress by Settings.qSSaveProgress.asMutableState()
@@ -238,13 +240,16 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                 title = { Text(text = stringResource(id = R.string.quick_search)) },
                 colors = topBarOnDrawerColor(),
                 actions = {
-                    IconButton(onClick = {
-                        launch {
-                            awaitConfirmationOrCancel(title = R.string.quick_search, showCancelButton = false) {
-                                Text(text = stringResource(id = R.string.add_quick_search_tip))
+                    IconButton(
+                        onClick = {
+                            launch {
+                                awaitConfirmationOrCancel(title = R.string.quick_search, showCancelButton = false) {
+                                    Text(text = stringResource(id = R.string.add_quick_search_tip))
+                                }
                             }
-                        }
-                    }) {
+                        },
+                        shapes = IconButtonDefaults.shapes(),
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Default.Help,
                             contentDescription = stringResource(id = R.string.readme),
@@ -292,6 +297,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                                 }
                             }
                         },
+                        shapes = IconButtonDefaults.shapes(),
                         enabled = data.loadState.isIdle,
                     ) {
                         Icon(
@@ -325,32 +331,28 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                         ) { isDragging ->
                             // Not using rememberSwipeToDismissBoxState to prevent LazyColumn from reusing it
                             // SQLite may reuse ROWIDs from previously deleted rows so they'll have the same key
-                            val dismissState = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, density) }
-                            LaunchedEffect(dismissState) {
-                                snapshotFlow { dismissState.currentValue }.collect { value ->
-                                    if (value == SwipeToDismissBoxValue.EndToStart) {
-                                        dialogState.runCatching {
-                                            awaitConfirmationOrCancel(confirmText = R.string.delete) {
-                                                Text(text = stringResource(R.string.delete_quick_search, item.name))
-                                            }
-                                        }.onSuccess {
-                                            EhDB.deleteQuickSearch(item)
-                                            with(quickSearchList) {
-                                                subList(index + 1, size).forEach {
-                                                    it.position--
-                                                }
-                                                removeAt(index)
-                                            }
-                                        }.onFailure {
-                                            dismissState.reset()
-                                        }
-                                    }
-                                }
-                            }
+                            val dismissState = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, positionalThreshold) }
                             SwipeToDismissBox(
                                 state = dismissState,
                                 backgroundContent = {},
                                 enableDismissFromStartToEnd = false,
+                                onDismiss = {
+                                    dialogState.runCatching {
+                                        awaitConfirmationOrCancel(confirmText = R.string.delete) {
+                                            Text(text = stringResource(R.string.delete_quick_search, item.name))
+                                        }
+                                    }.onSuccess {
+                                        EhDB.deleteQuickSearch(item)
+                                        with(quickSearchList) {
+                                            subList(index + 1, size).forEach {
+                                                it.position--
+                                            }
+                                            removeAt(index)
+                                        }
+                                    }.onFailure {
+                                        dismissState.reset()
+                                    }
+                                },
                             ) {
                                 val elevation by animateDpAsState(
                                     if (isDragging) {
@@ -382,6 +384,7 @@ fun AnimatedVisibilityScope.GalleryListScreen(
                                     trailingContent = {
                                         IconButton(
                                             onClick = {},
+                                            shapes = IconButtonDefaults.shapes(),
                                             modifier = Modifier.draggableHandle(
                                                 onDragStarted = {
                                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.START)
@@ -479,16 +482,16 @@ fun AnimatedVisibilityScope.GalleryListScreen(
         searchFieldState = searchFieldState,
         suggestionProvider = {
             GalleryDetailUrlParser.parse(it, false)?.run {
-                GalleryDetailUrlSuggestion(gid, token)
+                listOf(GalleryDetailUrlSuggestion(gid, token))
             } ?: GalleryPageUrlParser.parse(it, false)?.run {
-                GalleryPageUrlSuggestion(gid, pToken, page)
-            }
+                listOf(GalleryPageUrlSuggestion(gid, pToken, page))
+            }.orEmpty()
         },
-        tagNamespace = true,
+        localSearch = false,
         searchBarOffsetY = { searchBarOffsetY },
         trailingIcon = {
             val sheetState = LocalSideSheetState.current
-            IconButton(onClick = { launch { sheetState.open() } }) {
+            IconButton(onClick = { launch { sheetState.open() } }, shapes = IconButtonDefaults.shapes()) {
                 Icon(imageVector = Icons.Outlined.Bookmarks, contentDescription = stringResource(id = R.string.quick_search))
             }
             AvatarIcon()
@@ -614,9 +617,9 @@ fun AnimatedVisibilityScope.GalleryListScreen(
 
 const val TOPLIST_PAGES = 200
 
-context(_: Context)
 @Composable
 @Stable
+context(_: Context)
 private fun getSuitableTitleForUrlBuilder(urlBuilder: ListUrlBuilder, appName: Boolean = true): String? {
     val keyword = urlBuilder.keyword
     val category = urlBuilder.category
@@ -635,7 +638,7 @@ private fun getSuitableTitleForUrlBuilder(urlBuilder: ListUrlBuilder, appName: B
                 }
             }
             MODE_TAG -> {
-                val canTranslate = Settings.showTagTranslations && EhTagDatabase.translatable && EhTagDatabase.initialized
+                val canTranslate = Settings.showTagTranslations.value && EhTagDatabase.translatable && EhTagDatabase.initialized
                 wrapTagKeyword(keyword, canTranslate)
             }
             else -> keyword

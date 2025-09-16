@@ -21,8 +21,8 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import com.hippo.ehviewer.R
-import eu.kanade.tachiyomi.util.lang.withUIContext
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.util.withUIContext
 import java.io.File
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.fetchAndIncrement
@@ -46,7 +46,7 @@ private val lifecycle: Lifecycle
         }
     }
 
-context(ctx: Context)
+context(_: Context)
 suspend fun <I, O> awaitActivityResult(contract: ActivityResultContract<I, O>, input: I): O {
     val key = "activity_rq#${atomicInteger.fetchAndIncrement()}"
     var launcher: ActivityResultLauncher<I>? = null
@@ -82,8 +82,8 @@ suspend fun requestPermission(key: String): Boolean {
 context(_: Context)
 suspend fun pickVisualMedia(type: VisualMediaType): Uri? = awaitActivityResult(ActivityResultContracts.PickVisualMedia(), PickVisualMediaRequest(mediaType = type))
 
-context(ctx: Context)
 @RequiresApi(Build.VERSION_CODES.O)
+context(ctx: Context)
 suspend fun requestInstallPermission(): Boolean = with(ctx) {
     if (packageManager.canRequestPackageInstalls()) return true
     val granted = requestPermission(Manifest.permission.REQUEST_INSTALL_PACKAGES)

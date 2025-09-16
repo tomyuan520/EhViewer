@@ -16,6 +16,7 @@
 package com.hippo.ehviewer.download
 
 import android.Manifest
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -30,14 +31,19 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.savedstate.serialization.decodeFromSavedState
 import androidx.savedstate.serialization.encodeToSavedState
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.util.unsafeLazy
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.client.data.BaseGalleryInfo
+import com.hippo.ehviewer.client.exception.FatalException
+import com.hippo.ehviewer.client.exception.InsufficientGpException
+import com.hippo.ehviewer.client.exception.IpBannedException
+import com.hippo.ehviewer.client.exception.QuotaExceededException
 import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.ui.MainActivity
 import com.hippo.ehviewer.util.FileUtils
 import com.hippo.ehviewer.util.ReadableTime
-import com.hippo.ehviewer.util.unsafeLazy
+import com.hippo.ehviewer.util.isAtLeastS
 import eu.kanade.tachiyomi.util.system.logcat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +65,7 @@ class DownloadService :
     private val notifyManager by unsafeLazy { NotificationManagerCompat.from(this) }
     private val downloadingNotification by unsafeLazy { initDownloadingNotification() }
     private val downloadedNotification by lazy { initDownloadedNotification() }
-    private val error509Notification by lazy { init509Notification() }
+    private val fatalNotification by lazy { initFatalNotification() }
     private val channelId by unsafeLazy { "$packageName.download" }
 
     override fun onCreate() {
@@ -67,12 +73,18 @@ class DownloadService :
             NotificationChannelCompat.Builder(channelId, NotificationManagerCompat.IMPORTANCE_LOW)
                 .setName(getString(R.string.download_service)).build(),
         )
-        downloadingNotification.builder.run {
+        downloadingNotification.builder.runCatching {
             setContentTitle(getString(R.string.download_service))
                 .setContentText(null)
                 .setSubText(null)
                 .setProgress(0, 0, true)
             startForeground(ID_DOWNLOADING, build())
+        }.onFailure {
+            if (isAtLeastS && it is ForegroundServiceStartNotAllowedException) {
+                logcat(it)
+            } else {
+                throw it
+            }
         }
         launch {
             deferredMgr.await().setDownloadListener(this@DownloadService)
@@ -109,19 +121,11 @@ class DownloadService :
                 }
             }
 
-            ACTION_START_ALL -> {
-                deferredMgr.await().startAllDownload()
-            }
-
-            ACTION_STOP_ALL -> deferredMgr.await().run {
-                if (isIdle) stopSelf() else stopAllDownload()
-            }
-
-            ACTION_CLEAR -> {
-                clear()
-                checkStopSelf()
-            }
+            ACTION_START_ALL -> deferredMgr.await().startAllDownload()
+            ACTION_STOP_ALL -> deferredMgr.await().stopAllDownload()
+            ACTION_CLEAR -> clear()
         }
+        checkStopSelf()
     }
 
     override fun onBind(intent: Intent) = null
@@ -137,7 +141,7 @@ class DownloadService :
             .setAutoCancel(false)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .addAction(
-                R.drawable.v_pause_x24,
+                com.hippo.ehviewer.R.drawable.v_pause_x24,
                 getString(R.string.stat_download_action_stop_all),
                 piStopAll,
             )
@@ -172,24 +176,27 @@ class DownloadService :
             .apply { launch { run() } }
     }
 
-    private fun init509Notification(): NotificationHandler {
+    private fun initFatalNotification(): NotificationHandler {
         val builder = NotificationCompat.Builder(applicationContext, channelId)
-            .setSmallIcon(R.drawable.ic_baseline_warning_24)
-            .setContentTitle(getString(R.string.stat_509_alert_title))
-            .setContentText(getString(R.string.stat_509_alert_text))
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(getString(R.string.stat_509_alert_text)),
-            )
+            .setSmallIcon(com.hippo.ehviewer.R.drawable.ic_baseline_warning_24)
             .setAutoCancel(true)
             .setOngoing(false)
             .setCategory(NotificationCompat.CATEGORY_ERROR)
-        return NotificationHandler(this, notifyManager, builder, ID_509)
+        return NotificationHandler(this, notifyManager, builder, ID_FATAL)
             .apply { launch { run() } }
     }
 
-    override fun onGet509() {
-        error509Notification.run {
+    override fun onFatal(error: FatalException) {
+        val (title, text) = when (error) {
+            is IpBannedException -> R.string.error_ip_banned to error.message
+            is InsufficientGpException -> R.string.insufficient_funds to error.message
+            is QuotaExceededException -> R.string.stat_509_alert_title to getString(R.string.stat_509_alert_text)
+        }
+        fatalNotification.run {
             builder.setWhen(System.currentTimeMillis())
+                .setContentTitle(getString(title))
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             show()
         }
     }
@@ -412,7 +419,7 @@ class DownloadService :
         const val ACTION_CLEAR_DOWNLOAD_SERVICE = "clear_download_service"
         private const val ID_DOWNLOADING = 1
         private const val ID_DOWNLOADED = 2
-        private const val ID_509 = 3
+        private const val ID_FATAL = 3
         private const val DELAY = 1000L // 1s
         private val sItemStateArray = LongSparseArray<Boolean>()
         private val sItemTitleArray = LongSparseArray<String>()

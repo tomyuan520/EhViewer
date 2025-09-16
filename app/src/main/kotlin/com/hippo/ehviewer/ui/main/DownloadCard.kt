@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -38,19 +39,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.CrystalCard
+import com.ehviewer.core.ui.util.TransitionsVisibilityScope
+import com.ehviewer.core.ui.util.listThumbGenerator
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.download.DownloadManager
-import com.hippo.ehviewer.ui.tools.CrystalCard
 import com.hippo.ehviewer.ui.tools.GalleryListCardRating
-import com.hippo.ehviewer.ui.tools.TransitionsVisibilityScope
-import com.hippo.ehviewer.ui.tools.listThumbGenerator
 import com.hippo.ehviewer.util.FileUtils
 
-context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 @Composable
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 fun DownloadCard(
     onClick: () -> Unit,
     onThumbClick: () -> Unit,
@@ -148,7 +149,7 @@ fun DownloadCard(
                     Text(
                         text = categoryText,
                         modifier = Modifier.clip(ShapeDefaults.Small).background(categoryColor).padding(vertical = 2.dp, horizontal = 8.dp),
-                        color = if (Settings.harmonizeCategoryColor) Color.Unspecified else EhUtils.categoryTextColor,
+                        color = if (Settings.harmonizeCategoryColor.value) Color.Unspecified else EhUtils.categoryTextColor,
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -164,7 +165,7 @@ fun DownloadCard(
                         icon(running)
                     }
                 } else {
-                    IconButton(onClick = if (running) onStop else onStart, modifier = Modifier.offset(4.dp)) {
+                    IconButton(onClick = if (running) onStop else onStart, shapes = IconButtonDefaults.shapes(), modifier = Modifier.offset(4.dp)) {
                         icon(running)
                     }
                 }

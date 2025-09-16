@@ -8,10 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -25,16 +21,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.util.launch
+import com.ehviewer.core.util.withUIContext
 import com.hippo.ehviewer.BuildConfig
 import com.hippo.ehviewer.EhDB
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
+import com.hippo.ehviewer.asMutableState
 import com.hippo.ehviewer.download.downloadLocation
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.destinations.LicenseScreenDestination
+import com.hippo.ehviewer.ui.main.NavigationIcon
 import com.hippo.ehviewer.ui.tools.DialogState
 import com.hippo.ehviewer.ui.tools.awaitConfirmationOrCancel
-import com.hippo.ehviewer.ui.tools.observed
 import com.hippo.ehviewer.updater.AppUpdater
 import com.hippo.ehviewer.updater.Release
 import com.hippo.ehviewer.util.AppConfig
@@ -45,9 +44,7 @@ import com.hippo.files.delete
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import eu.kanade.tachiyomi.util.lang.withUIContext
 import moe.tarsin.coroutines.runSuspendCatching
-import moe.tarsin.launch
 import moe.tarsin.navigate
 import moe.tarsin.snackbar
 import moe.tarsin.string
@@ -72,11 +69,7 @@ fun AnimatedVisibilityScope.AboutScreen(navigator: DestinationsNavigator) = Scre
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(id = R.string.settings_about)) },
-                navigationIcon = {
-                    IconButton(onClick = { navigator.popBackStack() }) {
-                        Icon(imageVector = Icons.AutoMirrored.Default.ArrowBack, contentDescription = null)
-                    }
-                },
+                navigationIcon = { NavigationIcon() },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -107,17 +100,17 @@ fun AnimatedVisibilityScope.AboutScreen(navigator: DestinationsNavigator) = Scre
             )
             SwitchPreference(
                 title = stringResource(id = R.string.backup_before_update),
-                value = Settings::backupBeforeUpdate,
+                state = Settings.backupBeforeUpdate.asMutableState(),
             )
             SwitchPreference(
                 title = stringResource(id = R.string.use_ci_update_channel),
-                value = Settings::useCIUpdateChannel,
+                state = Settings.useCIUpdateChannel.asMutableState(),
             )
             SimpleMenuPreferenceInt(
                 title = stringResource(id = R.string.auto_updates),
-                entry = R.array.update_frequency,
-                entryValueRes = R.array.update_frequency_values,
-                value = Settings::updateIntervalDays.observed,
+                entry = com.hippo.ehviewer.R.array.update_frequency,
+                entryValueRes = com.hippo.ehviewer.R.array.update_frequency_values,
+                state = Settings.updateIntervalDays.asMutableState(),
             )
             WorkPreference(title = stringResource(id = R.string.settings_about_check_for_updates)) {
                 runSuspendCatching {
@@ -145,7 +138,7 @@ suspend fun showNewVersion(release: Release) {
             Text(text = release.changelog)
         }
     }
-    if (Settings.backupBeforeUpdate) {
+    if (Settings.backupBeforeUpdate.value) {
         val time = ReadableTime.getFilenamableTime()
         EhDB.exportDB(ctx, (downloadLocation / "$time.db"))
     }

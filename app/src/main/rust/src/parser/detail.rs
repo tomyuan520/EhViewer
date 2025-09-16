@@ -1,11 +1,11 @@
-use crate::parser::list::{get_thumb_key, parse_token_and_gid, to_category_i32, BaseGalleryInfo};
-use crate::{get_first_child, get_first_element_by_class_name, get_node_handle_attr, get_tag_attr};
-use crate::{get_vdom_first_element_by_class_name, regex, EhError};
-use anyhow::{bail, Context, Result};
+use crate::parser::list::{BaseGalleryInfo, get_thumb_key, parse_token_and_gid, to_category_i32};
+use crate::{EhError, get_first_child, get_first_element_by_class_name, get_node_handle_attr};
+use crate::{get_tag_attr, get_vdom_first_element_by_class_name, regex};
+use anyhow::{Context, Result, bail};
 use chrono::naive::NaiveDateTime;
 use quick_xml::escape::unescape;
 use serde::Serialize;
-use tl::{Node, NodeHandle, Parser, VDom};
+use tl::{Bytes, Node, NodeHandle, Parser, VDom};
 
 #[derive(Serialize, Debug, Default)]
 #[allow(non_snake_case)]
@@ -14,8 +14,6 @@ pub struct GalleryDetail {
     pub apiUid: i64,
     pub apiKey: Option<String>,
     pub torrentCount: i32,
-    pub torrentUrl: Option<String>,
-    pub archiveUrl: Option<String>,
     pub parent: Option<String>,
     pub newerVersions: Vec<BaseGalleryInfo>,
     pub visible: Option<String>,
@@ -55,7 +53,7 @@ pub struct GalleryTagGroup {
     pub tags: Vec<GalleryTag>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Default)]
 #[allow(non_snake_case)]
 pub struct GalleryComment {
     pub id: i64,
@@ -80,7 +78,7 @@ pub struct GalleryCommentList {
     pub hasMore: bool,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Default)]
 #[allow(non_snake_case)]
 pub struct PreviewData {
     pub url: String,
@@ -148,22 +146,16 @@ fn parse_detail(gd: &mut GalleryDetail, dom: &VDom, parser: &Parser, body: &str)
     gd.apiKey = Some(caps[4].to_string());
     gd.galleryInfo.rating = caps[5].parse().ok()?;
 
-    let torrent_regex = regex!(
-        r#"<a[^<>]*onclick="return popUp\('([^']+)'[^)]+\)">Torrent Download \((\d+)\)</a>"#
-    );
-    let caps = torrent_regex.captures(body)?;
-    gd.torrentUrl = unescape(&caps[1]).ok().map(|s| s.to_string());
-    gd.torrentCount = caps[2].parse().ok()?;
-
-    let archive_regex =
-        regex!(r#"<a[^<>]*onclick="return popUp\('([^']+)'[^)]+\)">Archive Download</a>"#);
-    let caps = archive_regex.captures(body)?;
-    gd.archiveUrl = unescape(&caps[1]).ok().map(|s| s.to_string());
+    let regex = regex!(r#"[^(]+\(([^)]+)"#);
+    let gd5 = dom.get_element_by_id("gd5")?.get(parser)?.as_tag()?;
+    let node = gd5.query_selector(parser, "a[onclick]")?.nth(1)?;
+    let text = node.get(parser)?.inner_text(parser);
+    let caps = regex.captures(&text)?;
+    gd.torrentCount = caps[1].parse().ok()?;
 
     let gd1 = dom.get_element_by_id("gd1")?.get(parser)?.as_tag()?;
     let style = get_tag_attr(get_first_child(gd1, parser)?, "style")?;
-    let cover_regex = regex!(r#"[^(]+\(([^)]+)"#);
-    let caps = cover_regex.captures(style)?;
+    let caps = regex.captures(style)?;
     gd.galleryInfo.thumbKey = get_thumb_key(&caps[1]);
 
     let title = dom.get_element_by_id("gn")?.get(parser)?.inner_text(parser);
@@ -248,9 +240,9 @@ pub fn parse_gallery_detail(dom: &mut VDom, body: &str) -> Result<GalleryDetail>
     }
 
     let mut gallery_detail = GalleryDetail {
-        tagGroups: parse_tag_groups(dom, parser).context("Failed to parse tag groups")?,
-        previewList: parse_preview_list(dom, parser).context("Failed to parse preview list")?,
-        comments: parse_comments(dom).context("Failed to parse comments")?,
+        tagGroups: parse_tag_groups(dom, parser, false)?,
+        previewList: parse_preview_list(dom, parser)?,
+        comments: parse_comments(dom)?,
         ..Default::default()
     };
 
@@ -266,11 +258,23 @@ pub fn parse_event_pane(dom: &VDom, parser: &Parser) -> Option<String> {
         .map(|n| n.inner_html(parser).to_string())
 }
 
-fn parse_tag_groups(dom: &VDom, parser: &Parser) -> Option<Vec<GalleryTagGroup>> {
-    dom.get_element_by_id("taglist")?
-        .get(parser)?
-        .as_tag()?
-        .query_selector(parser, "tr")?
+pub fn parse_tag_groups(
+    dom: &VDom,
+    parser: &Parser,
+    is_root: bool,
+) -> Result<Vec<GalleryTagGroup>> {
+    let nodes: Vec<_> = if is_root {
+        dom.query_selector("tr").unwrap().collect()
+    } else {
+        dom.get_element_by_id("taglist")
+            .and_then(|n| n.get(parser)?.as_tag())
+            .context("Failed to find taglist")?
+            .query_selector(parser, "tr")
+            .unwrap()
+            .collect()
+    };
+    nodes
+        .iter()
         .filter_map(|n| n.get(parser)?.children())
         .map(|children| {
             let mut iter = children
@@ -299,15 +303,16 @@ fn parse_tag_groups(dom: &VDom, parser: &Parser) -> Option<Vec<GalleryTagGroup>>
                     let power = match tag.attributes().class()?.try_as_utf8_str()? {
                         "gtw" => PowerStatus::Weak,
                         "gtl" => PowerStatus::Active,
-                        _ => PowerStatus::Solid,
+                        "gt" => PowerStatus::Solid,
+                        _ => return None,
                     };
                     let vote = match get_first_child(tag, parser)?
                         .attributes()
-                        .class()?
-                        .try_as_utf8_str()?
+                        .class()
+                        .and_then(Bytes::try_as_utf8_str)
                     {
-                        "tup" => VoteStatus::Up,
-                        "tdn" => VoteStatus::Down,
+                        Some("tup") => VoteStatus::Up,
+                        Some("tdn") => VoteStatus::Down,
                         _ => VoteStatus::None,
                     };
                     Some(GalleryTag { text, power, vote })
@@ -317,6 +322,7 @@ fn parse_tag_groups(dom: &VDom, parser: &Parser) -> Option<Vec<GalleryTagGroup>>
             Some(GalleryTagGroup { namespace, tags })
         })
         .collect::<Option<Vec<_>>>()
+        .context("Failed to parse tag groups")
 }
 
 fn parse_comment_time(str: &str, prefix: &str) -> Option<i64> {
@@ -325,36 +331,56 @@ fn parse_comment_time(str: &str, prefix: &str) -> Option<i64> {
         .map(|(dt, _)| dt.and_utc().timestamp_millis())
 }
 
-fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
+pub fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
+    let parser = dom.parser();
     let cdiv = dom
         .get_element_by_id("cdiv")
+        .and_then(|n| n.get(parser)?.as_tag())
         .context("Failed to find cdiv")?;
-    let parser = dom.parser_mut();
-    let comment_nodes = cdiv
+
+    // Mimic "#chd + p" as tl does not support selecting siblings
+    let chd = dom.get_element_by_id("chd").context("Failed to find chd")?;
+    let children = cdiv.children();
+    let slice = children.top().as_slice();
+    let i = slice
+        .iter()
+        .rposition(|n| *n == chd)
+        .context("chd is not a direct child of cdiv")?;
+    if let Some(tag) = slice
+        .iter()
+        .skip(i + 1)
+        .find_map(|n| n.get(parser)?.as_tag())
+        && tag.name() == "p"
+    {
+        bail!(EhError::Error(tag.inner_text(parser).to_string()));
+    };
+
+    let has_more = chd
         .get(parser)
-        .and_then(|n| n.as_tag()?.query_selector(parser, ".c1"))
+        .and_then(|n| get_first_child(n.as_tag()?, parser))
+        .is_some_and(|tag| tag.attributes().id() != Some(&"postnewcomment".into()));
+
+    let comment_nodes = cdiv
+        .query_selector(parser, ".c1")
         .unwrap()
         .collect::<Vec<_>>();
     let comments = comment_nodes
         .iter()
         .map(|node_handle| {
+            let parser = dom.parser_mut();
             let node = node_handle.get(parser).unwrap();
+            let mut c = GalleryComment::default();
 
             let c3 = get_first_element_by_class_name(node, parser, "c3")
                 .and_then(Node::as_tag)
                 .context("Failed to find c3")?;
             let posted_node = c3.children().top()[0].get(parser).unwrap();
-            let posted = parse_comment_time(&posted_node.inner_text(parser), "Posted on ")
+            c.time = parse_comment_time(&posted_node.inner_text(parser), "Posted on ")
                 .context("Failed to parse posted date")?;
-            let user = get_first_child(c3, parser)
+            c.user = get_first_child(c3, parser)
                 .map(|n| unescape(&n.inner_text(parser)).map(|s| s.to_string()))
                 .transpose()?;
 
-            let mut editable = false;
-            let mut vote_up_able = false;
-            let mut vote_up_ed = false;
-            let mut vote_down_able = false;
-            let mut vote_down_ed = false;
             if let Some(c4) =
                 get_first_element_by_class_name(node, parser, "c4").and_then(Node::as_tag)
             {
@@ -364,19 +390,20 @@ fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
                     .filter_map(|n| n.get(parser)?.as_tag())
                     .for_each(|tag| match tag.inner_text(parser).as_ref() {
                         "Vote+" => {
-                            vote_up_able = true;
-                            vote_up_ed = tag.attributes().contains("style");
+                            c.voteUpAble = true;
+                            c.voteUpEd = get_tag_attr(tag, "style").is_some_and(|s| !s.is_empty());
                         }
                         "Vote-" => {
-                            vote_down_able = true;
-                            vote_down_ed = tag.attributes().contains("style");
+                            c.voteDownAble = true;
+                            c.voteDownEd =
+                                get_tag_attr(tag, "style").is_some_and(|s| !s.is_empty());
                         }
-                        "Edit" => editable = true,
+                        "Edit" => c.editable = true,
                         _ => {}
                     })
             };
 
-            let score = get_first_element_by_class_name(node, parser, "c5")
+            c.score = get_first_element_by_class_name(node, parser, "c5")
                 .and_then(|c5| {
                     get_first_child(c5.as_tag()?, parser)?
                         .inner_text(parser)
@@ -385,11 +412,11 @@ fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
                 })
                 .unwrap_or(0);
 
-            let vote_state = get_first_element_by_class_name(node, parser, "c7")
+            c.voteState = get_first_element_by_class_name(node, parser, "c7")
                 .map(|c7| unescape(&c7.inner_text(parser)).map(|s| s.to_string()))
                 .transpose()?;
 
-            let last_edited = get_first_element_by_class_name(node, parser, "c8")
+            c.lastEdited = get_first_element_by_class_name(node, parser, "c8")
                 .and_then(|c8| parse_comment_time(&c8.inner_text(parser), "Last edited on "))
                 .unwrap_or(0);
 
@@ -401,9 +428,7 @@ fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
                 .context("Failed to find c6")?;
             let c6 = c6_handle.get(parser).and_then(Node::as_tag).unwrap();
             let nodes = c6
-                // Should be "span[style='text-decoration:underline;']" but it's bugged in tl
-                // https://github.com/y21/tl/issues/46
-                .query_selector(parser, "span[style^='text-decoration:underline']")
+                .query_selector(parser, "span[style='text-decoration:underline;']")
                 .unwrap()
                 .collect::<Vec<_>>();
             for node in nodes {
@@ -412,45 +437,17 @@ fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
                 tag.attributes_mut().remove("style");
             }
             let c6 = c6_handle.get(parser).and_then(Node::as_tag).unwrap();
-            let id = c6
+            c.id = c6
                 .attributes()
                 .id()
                 .and_then(|id| id.try_as_utf8_str()?.strip_prefix("comment_")?.parse().ok())
                 .context("Failed to parse comment id")?;
-            let comment = c6.inner_html(parser).to_string();
+            c.uploader = c.id == 0;
+            c.comment = c6.inner_html(parser).to_string();
 
-            Ok(GalleryComment {
-                id,
-                score,
-                editable,
-                voteUpAble: vote_up_able,
-                voteUpEd: vote_up_ed,
-                voteDownAble: vote_down_able,
-                voteDownEd: vote_down_ed,
-                uploader: id == 0,
-                voteState: vote_state,
-                time: posted,
-                user,
-                comment,
-                lastEdited: last_edited,
-            })
+            Ok(c)
         })
         .collect::<Result<Vec<_>>>()?;
-
-    let parser = dom.parser();
-    let has_more = dom
-        .get_element_by_id("chd")
-        .and_then(|n| {
-            let tag = n
-                .get(parser)?
-                .children()?
-                .top()
-                .iter()
-                .filter_map(|n| n.get(parser)?.as_tag())
-                .next()?;
-            tag.attributes().id()
-        })
-        .is_some_and(|id| id.ne("postnewcomment"));
 
     Ok(GalleryCommentList {
         comments,
@@ -458,10 +455,28 @@ fn parse_comments(dom: &mut VDom) -> Result<GalleryCommentList> {
     })
 }
 
-fn parse_preview_list(dom: &VDom, parser: &Parser) -> Option<Vec<GalleryPreview>> {
-    dom.get_element_by_id("gdt")?
-        .get(parser)?
-        .children()?
+pub fn parse_pages(dom: &VDom, parser: &Parser) -> Result<i32> {
+    dom.get_element_by_id("gdd")
+        .and_then(|gdd| {
+            gdd.get(parser)?
+                .as_tag()?
+                .query_selector(parser, "td.gdt2")?
+                .find_map(|n| {
+                    n.get(parser)?.children()?.top()[0]
+                        .get(parser)?
+                        .inner_text(parser)
+                        .strip_suffix(" pages")?
+                        .parse()
+                        .ok()
+                })
+        })
+        .context("Failed to parse pages")
+}
+
+pub fn parse_preview_list(dom: &VDom, parser: &Parser) -> Result<Vec<GalleryPreview>> {
+    dom.get_element_by_id("gdt")
+        .and_then(|n| n.get(parser)?.children())
+        .context("Failed to find gdt")?
         .top()
         .iter()
         .filter_map(|n| n.get(parser)?.as_tag())
@@ -475,33 +490,23 @@ fn parse_preview_list(dom: &VDom, parser: &Parser) -> Option<Vec<GalleryPreview>
             let style_regex = regex!(r#"\D+(\d+)\D+(\d+)[^(]+\(([^)]+)\)(?: -(\d+))?"#);
             let caps = style_regex.captures(get_node_handle_attr(&div, parser, "style")?)?;
             let url = caps[3].to_string();
-            let preview = if let Some(offset) = caps.get(4) {
-                GalleryPreview(
-                    "V2".to_string(),
-                    PreviewData {
-                        url,
-                        position,
-                        pToken: p_token,
-                        offsetX: offset.as_str().parse().ok(),
-                        clipWidth: caps[1].parse().ok(),
-                        clipHeight: caps[2].parse().ok(),
-                    },
-                )
+            let mut data = PreviewData {
+                url,
+                position,
+                pToken: p_token,
+                ..Default::default()
+            };
+            let ty = if let Some(offset) = caps.get(4) {
+                data.offsetX = offset.as_str().parse().ok();
+                data.clipWidth = caps[1].parse().ok();
+                data.clipHeight = caps[2].parse().ok();
+                "V2"
             } else {
-                GalleryPreview(
-                    "V1".to_string(),
-                    PreviewData {
-                        url,
-                        position,
-                        pToken: p_token,
-                        offsetX: None,
-                        clipWidth: None,
-                        clipHeight: None,
-                    },
-                )
+                "V1"
             };
 
-            Some(preview)
+            Some(GalleryPreview(ty.to_string(), data))
         })
         .collect::<Option<Vec<_>>>()
+        .context("Failed to parse preview list")
 }

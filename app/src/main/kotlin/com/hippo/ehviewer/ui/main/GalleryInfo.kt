@@ -38,21 +38,21 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.ehviewer.core.ui.component.CrystalCard
+import com.ehviewer.core.ui.component.ElevatedCard
+import com.ehviewer.core.ui.util.SharedElementBox
+import com.ehviewer.core.ui.util.TransitionsVisibilityScope
+import com.ehviewer.core.ui.util.listThumbGenerator
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.client.data.GalleryInfo
 import com.hippo.ehviewer.client.data.GalleryInfo.Companion.NOT_FAVORITED
 import com.hippo.ehviewer.download.DownloadManager
-import com.hippo.ehviewer.ui.tools.CrystalCard
-import com.hippo.ehviewer.ui.tools.ElevatedCard
 import com.hippo.ehviewer.ui.tools.GalleryListCardRating
-import com.hippo.ehviewer.ui.tools.SharedElementBox
-import com.hippo.ehviewer.ui.tools.TransitionsVisibilityScope
-import com.hippo.ehviewer.ui.tools.listThumbGenerator
 import com.hippo.ehviewer.util.FavouriteStatusRouter
 
-context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 @Composable
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 fun GalleryInfoListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -135,7 +135,7 @@ fun GalleryInfoListItem(
                     Text(
                         text = categoryText,
                         modifier = Modifier.clip(ShapeDefaults.Small).background(categoryColor).padding(vertical = 2.dp, horizontal = 8.dp),
-                        color = if (Settings.harmonizeCategoryColor) Color.Unspecified else EhUtils.categoryTextColor,
+                        color = if (Settings.harmonizeCategoryColor.value) Color.Unspecified else EhUtils.categoryTextColor,
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Text(text = info.posted.orEmpty())
@@ -145,8 +145,8 @@ fun GalleryInfoListItem(
     }
 }
 
-context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 @Composable
+context(_: SharedTransitionScope, _: TransitionsVisibilityScope)
 fun GalleryInfoGridItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -187,7 +187,7 @@ fun GalleryInfoGridItem(
         Badge(
             modifier = Modifier.align(Alignment.TopEnd).widthIn(min = 32.dp).height(24.dp),
             containerColor = categoryColor,
-            contentColor = if (Settings.harmonizeCategoryColor) contentColorFor(categoryColor) else EhUtils.categoryTextColor,
+            contentColor = if (Settings.harmonizeCategoryColor.value) contentColorFor(categoryColor) else EhUtils.categoryTextColor,
         ) {
             val shouldShowLanguage = showLanguage && info.simpleLanguage != null
             if (showPages && info.pages > 0) {

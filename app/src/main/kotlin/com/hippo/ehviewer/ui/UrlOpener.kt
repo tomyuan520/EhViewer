@@ -20,7 +20,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.net.toUri
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
 import com.hippo.ehviewer.client.data.GalleryDetail
 import com.hippo.ehviewer.client.parser.GalleryPageUrlParser
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -32,7 +32,7 @@ fun openBrowser(url: String) {
     if (url.isEmpty()) return
     try {
         intent.launchUrl(ctx, url.toUri())
-    } catch (e: ActivityNotFoundException) {
+    } catch (_: ActivityNotFoundException) {
         Toast.makeText(ctx, R.string.no_browser_installed, Toast.LENGTH_LONG).show()
     }
 }

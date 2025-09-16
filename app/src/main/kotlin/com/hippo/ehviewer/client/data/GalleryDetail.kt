@@ -44,8 +44,6 @@ data class GalleryDetail(
     var apiUid: Long = -1L,
     var apiKey: String? = null,
     var torrentCount: Int = 0,
-    var torrentUrl: String? = null,
-    var archiveUrl: String? = null,
     var parent: String? = null,
     var newerVersions: List<BaseGalleryInfo> = emptyList(),
     var visible: String? = null,
@@ -70,7 +68,7 @@ data class GalleryDetail(
 
     suspend fun filterComments() {
         comments = with(comments) {
-            val scoreThreshold = Settings.commentThreshold
+            val scoreThreshold = Settings.commentThreshold.value
             copy(
                 comments = comments.filter {
                     it.uploader ||

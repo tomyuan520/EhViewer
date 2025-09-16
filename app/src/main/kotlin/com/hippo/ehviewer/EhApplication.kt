@@ -22,6 +22,7 @@ import android.os.StrictMode
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.runtime.Composer
+import androidx.compose.runtime.tooling.ComposeStackTraceMode
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.coroutineScope
 import coil3.EventListener
@@ -37,7 +38,12 @@ import coil3.request.allowRgb565
 import coil3.request.crossfade
 import coil3.serviceLoaderEnabled
 import coil3.util.DebugLogger
+import com.ehviewer.core.ui.util.initSETConnection
+import com.ehviewer.core.util.launchIO
+import com.ehviewer.core.util.launchUI
+import com.ehviewer.core.util.withUIContext
 import com.hippo.ehviewer.client.EhTagDatabase
+import com.hippo.ehviewer.coil.AnimatedWebPDecoder
 import com.hippo.ehviewer.coil.CropBorderInterceptor
 import com.hippo.ehviewer.coil.DetectBorderInterceptor
 import com.hippo.ehviewer.coil.DownloadThumbInterceptor
@@ -58,7 +64,6 @@ import com.hippo.ehviewer.ui.keepNoMediaFileStatus
 import com.hippo.ehviewer.ui.lockObserver
 import com.hippo.ehviewer.ui.screen.detailCache
 import com.hippo.ehviewer.ui.tools.dataStateFlow
-import com.hippo.ehviewer.ui.tools.initSETConnection
 import com.hippo.ehviewer.util.AppConfig
 import com.hippo.ehviewer.util.CrashHandler
 import com.hippo.ehviewer.util.FavouriteStatusRouter
@@ -69,9 +74,6 @@ import com.hippo.ehviewer.util.isAtLeastP
 import com.hippo.ehviewer.util.isAtLeastS
 import com.hippo.ehviewer.util.isAtLeastSExtension7
 import com.hippo.files.deleteContent
-import eu.kanade.tachiyomi.util.lang.launchIO
-import eu.kanade.tachiyomi.util.lang.launchUI
-import eu.kanade.tachiyomi.util.lang.withUIContext
 import eu.kanade.tachiyomi.util.system.logcat
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -95,7 +97,7 @@ class EhApplication :
         initSETConnection()
         // Initialize Settings on first access
         lifecycleScope.launchIO {
-            val mode = Settings.theme
+            val mode = Settings.theme.value
             if (!isAtLeastS) {
                 withUIContext {
                     AppCompatDelegate.setDefaultNightMode(mode)
@@ -129,9 +131,10 @@ class EhApplication :
             launchIO { dataStateFlow.value }
             launchIO { OSUtils.totalMemory }
             launch {
-                if (DownloadManager.labelList.isNotEmpty() && Settings.downloadFilterMode.key !in Settings.prefs) {
+                if (DownloadManager.labelList.isNotEmpty() && Settings.downloadFilterMode !in Settings.snapshot()) {
                     Settings.downloadFilterMode.value = DownloadsFilterMode.CUSTOM.flag
                 }
+                initialized = true
                 DownloadManager.readMetadataFromLocal()
             }
             launch {
@@ -139,13 +142,13 @@ class EhApplication :
                 FileUtils.cleanupDirectory(AppConfig.externalParseErrorDir)
             }
             launch { cleanupDownload() }
-            if (Settings.requestNews) {
+            if (Settings.requestNews.value) {
                 launch { checkDawn() }
             }
         }
         if (BuildConfig.DEBUG) {
             StrictMode.enableDefaults()
-            Composer.setDiagnosticStackTraceEnabled(true)
+            Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.SourceInformation)
         }
     }
 
@@ -188,6 +191,7 @@ class EhApplication :
             add(DetectBorderInterceptor)
             add(QrCodeInterceptor)
             add(MapExtraInfoInterceptor)
+            add(AnimatedWebPDecoder.Factory)
             if (isAtLeastP) {
                 add(AnimatedImageDecoder.Factory(false))
             } else {
@@ -212,6 +216,10 @@ class EhApplication :
     }
 
     companion object {
+        @Volatile
+        var initialized = false
+            private set
+
         val ktorClient by lazy {
             if (isAtLeastSExtension7 && Settings.enableCronet.value) {
                 HttpClient(Cronet) {
@@ -235,7 +243,7 @@ class EhApplication :
         val imageCache by lazy {
             diskCache {
                 directory(appCtx.cacheDir.toOkioPath() / "image_cache")
-                maxSizeBytes(Settings.readCacheSize.coerceIn(320, 5120).toLong() * 1024 * 1024)
+                maxSizeBytes(Settings.readCacheSize.value.coerceIn(320, 5120).toLong() * 1024 * 1024)
             }
         }
 

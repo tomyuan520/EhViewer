@@ -33,19 +33,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import arrow.core.raise.ensure
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.component.DropdownFilterChip
+import com.ehviewer.core.ui.util.thenIf
+import com.ehviewer.core.util.launch
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhTagDatabase
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.client.data.GalleryInfo.Companion.S_LANG_TAGS
 import com.hippo.ehviewer.collectAsState
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.DropdownFilterChip
 import com.hippo.ehviewer.ui.tools.awaitResult
-import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.util.toIntOrDefault
 import kotlinx.coroutines.CoroutineScope
-import moe.tarsin.launch
 
 private val categoryTable = arrayOf(
     EhUtils.DOUJINSHI to R.string.doujinshi,
@@ -60,8 +60,8 @@ private val categoryTable = arrayOf(
     EhUtils.MISC to R.string.misc,
 )
 
-context(_: DialogState, _: CoroutineScope, _: Context)
 @Composable
+context(_: DialogState, _: CoroutineScope, _: Context)
 fun SearchFilter(
     modifier: Modifier = Modifier,
     category: Int,
@@ -117,7 +117,7 @@ fun SearchFilter(
             selectedItemIndex = language + 1,
             onSelectedItemIndexChange = { onLanguageChange(it - 1) },
         )
-        val minRatingItems = stringArrayResource(id = R.array.search_min_rating)
+        val minRatingItems = stringArrayResource(id = com.hippo.ehviewer.R.array.search_min_rating)
         val minRatingStr = stringResource(id = R.string.search_sr)
         DropdownFilterChip(
             label = minRatingStr,

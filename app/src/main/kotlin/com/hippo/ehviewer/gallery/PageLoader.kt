@@ -4,6 +4,7 @@ import androidx.collection.SieveCache
 import androidx.collection.mutableIntObjectMapOf
 import arrow.fx.coroutines.ExitCase
 import arrow.fx.coroutines.bracketCase
+import com.ehviewer.core.util.withNonCancellableContext
 import com.hippo.ehviewer.EhDB
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.image.Image
@@ -13,7 +14,6 @@ import com.hippo.ehviewer.util.OSUtils
 import com.hippo.ehviewer.util.detectAds
 import com.hippo.ehviewer.util.displayString
 import com.hippo.ehviewer.util.isAtLeastO
-import eu.kanade.tachiyomi.util.lang.withNonCancellableContext
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.read
@@ -68,7 +68,7 @@ abstract class PageLoader(val scope: CoroutineScope, val gid: Long, startPage: I
 
     val pages = (0 until size).map { Page(it) }
 
-    private val prefetchPageCount = Settings.preloadImage
+    private val prefetchPageCount = Settings.preloadImage.value
 
     fun restart() {
         lock.write { cache.evictAll() }

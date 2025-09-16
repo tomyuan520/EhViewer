@@ -10,17 +10,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.ehviewer.core.ui.util.NoopTransitionsVisibilityScope
+import com.ehviewer.core.ui.util.TransitionsVisibilityScope
+import com.ehviewer.core.ui.util.togetherWith
 import com.hippo.ehviewer.ui.tools.DialogState
 import com.hippo.ehviewer.ui.tools.LocalGlobalDialogState
-import com.hippo.ehviewer.ui.tools.NoopTransitionsVisibilityScope
-import com.hippo.ehviewer.ui.tools.TransitionsVisibilityScope
-import com.hippo.ehviewer.ui.tools.togetherWith
 import com.hippo.ehviewer.util.findActivity
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.CoroutineScope
 
-context(scope: AnimatedVisibilityScope)
 @Composable
+context(scope: AnimatedVisibilityScope)
 inline fun <R> Screen(
     navigator: DestinationsNavigator,
     block: @Composable context(MainActivity, SnackbarHostState, DialogState, SharedTransitionScope, TransitionsVisibilityScope, DestinationsNavigator, CoroutineScope)

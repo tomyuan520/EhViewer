@@ -13,8 +13,8 @@ import android.webkit.MimeTypeMap
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
 import androidx.core.content.FileProvider
+import com.ehviewer.core.i18n.R
 import com.hippo.ehviewer.BuildConfig.APPLICATION_ID
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.client.EhUrl
 import com.hippo.ehviewer.client.data.GalleryInfo
 import com.hippo.ehviewer.gallery.Page
@@ -29,7 +29,7 @@ import com.hippo.ehviewer.util.requestPermission
 import com.hippo.files.toOkioPath
 import eu.kanade.tachiyomi.util.system.logcat
 import java.io.File
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import moe.tarsin.coroutines.runSuspendCatching
 import moe.tarsin.snackbar
 import moe.tarsin.string
@@ -121,7 +121,7 @@ suspend fun save(page: Page) {
                 try {
                     ctx.contentResolver.delete(imageUri, null, null)
                 } catch (e: Exception) {
-                    e.logcat(e)
+                    logcat("SavePage", e)
                 }
                 snackbar(cannotSave)
             } else if (isAtLeastQ) {

@@ -1,6 +1,6 @@
 use crate::parser::utils::parse_int_lenient;
-use crate::{get_tag_attr, regex, select_first, EhError};
-use anyhow::{bail, Context, Result};
+use crate::{EhError, get_tag_attr, regex, select_first};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use tl::{Parser, VDom};
 
@@ -41,7 +41,7 @@ pub fn parse_archive_url(dom: &VDom, parser: &Parser, body: &str) -> Result<Opti
     let url = dom.get_element_by_id("continue").and_then(|node| {
         let tag = select_first(node.get(parser)?.as_tag()?, parser, "a")?;
         let href = get_tag_attr(tag, "href")?;
-        Some(format!("{}?start=1", href))
+        Some(format!("{href}?start=1"))
     });
     Ok(url)
 }

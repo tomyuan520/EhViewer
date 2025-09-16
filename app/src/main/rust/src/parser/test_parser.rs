@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::parser::api::parse_vote_tag;
     use crate::parser::archive::{parse_archive_url, parse_archives_with_funds};
     use crate::parser::detail::parse_gallery_detail;
     use crate::parser::list::parse_info_list;
@@ -13,7 +14,7 @@ mod tests {
         let resp = get("https://e-hentai.org/").await.expect("Failed to get!");
         let body = resp.text().await.expect("Failed to receive!");
         let dom = tl::parse(&body, ParserOptions::default()).expect("Failed to parse html");
-        let result = parse_info_list(&dom, dom.parser(), &body).expect("Failed to parse info list");
+        let result = parse_info_list(&dom, dom.parser()).expect("Failed to parse info list");
         dbg!(result);
     }
 
@@ -63,6 +64,13 @@ mod tests {
         let mut dom =
             tl::parse(&body, ParserOptions::default().track_ids()).expect("Failed to parse HTML");
         let result = parse_gallery_detail(&mut dom, &body).expect("Failed to parse gallery detail");
+        dbg!(result);
+    }
+
+    #[test]
+    fn test_parse_tag_gallery() {
+        let json = fs::read_to_string("test_data/vote_tag.json").expect("Failed to read json file");
+        let result = parse_vote_tag(&json).expect_err("Should fail to parse");
         dbg!(result);
     }
 }

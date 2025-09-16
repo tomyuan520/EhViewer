@@ -20,21 +20,17 @@ import androidx.annotation.IntDef
 import arrow.core.Either
 import arrow.core.getOrElse
 import arrow.core.partially1
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.EhEngine
 import com.hippo.ehviewer.client.EhUrl
 import com.hippo.ehviewer.client.EhUrl.getGalleryDetailUrl
-import com.hippo.ehviewer.client.EhUrl.getGalleryMultiPageViewerUrl
 import com.hippo.ehviewer.client.EhUrl.referer
 import com.hippo.ehviewer.client.EhUtils
 import com.hippo.ehviewer.client.data.GalleryInfo
-import com.hippo.ehviewer.client.ehRequest
+import com.hippo.ehviewer.client.data.GalleryPreview
+import com.hippo.ehviewer.client.exception.FatalException
 import com.hippo.ehviewer.client.exception.QuotaExceededException
-import com.hippo.ehviewer.client.fetchUsingAsText
-import com.hippo.ehviewer.client.parser.GalleryDetailParser.parsePages
-import com.hippo.ehviewer.client.parser.GalleryDetailParser.parsePreviewList
-import com.hippo.ehviewer.client.parser.GalleryMultiPageViewerPTokenParser
 import com.hippo.ehviewer.util.displayString
 import com.hippo.files.find
 import eu.kanade.tachiyomi.util.system.logcat
@@ -92,9 +88,9 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
         }
     }
 
-    fun notifyGet509(index: Int) {
+    fun notifyFatal(error: FatalException) {
         synchronized(mSpiderListeners) {
-            mSpiderListeners.forEach { it.onGet509(index) }
+            mSpiderListeners.forEach { it.onFatal(error) }
         }
     }
 
@@ -318,27 +314,24 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
     }
         ?: readFromCache(galleryInfo.gid)?.takeIf { it.gid == galleryInfo.gid && it.token == galleryInfo.token }
 
-    private fun readPreviews(body: String, index: Int, spiderInfo: SpiderInfo) {
-        val previewList = parsePreviewList(body)
+    private fun readPreviews(previews: List<GalleryPreview>, index: Int, spiderInfo: SpiderInfo) {
         if (index == 0) {
-            spiderInfo.previewPerPage = previewList.size
+            spiderInfo.previewPerPage = previews.size
         } else {
-            spiderInfo.previewPerPage = previewList[0].position / index
+            spiderInfo.previewPerPage = previews[0].position / index
         }
-        previewList.forEach {
+        previews.forEach {
             if (it.pToken.isNotEmpty()) {
                 spiderInfo.pTokenMap[it.position] = it.pToken
             }
         }
     }
 
-    private suspend fun readSpiderInfoFromInternet() = ehRequest(
+    private suspend fun readSpiderInfoFromInternet() = EhEngine.getPreviewList(
         getGalleryDetailUrl(galleryInfo.gid, galleryInfo.token, 0, false),
-        referer,
-    ).fetchUsingAsText {
-        val pages = parsePages(this)
-        val spiderInfo = SpiderInfo(galleryInfo.gid, galleryInfo.token, pages)
-        readPreviews(this, 0, spiderInfo)
+    ).run {
+        val spiderInfo = SpiderInfo(galleryInfo.gid, galleryInfo.token, total)
+        readPreviews(previews, 0, spiderInfo)
         spiderInfo
     }
 
@@ -346,17 +339,11 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
 
     suspend fun getPTokenFromMultiPageViewer(index: Int): String? {
         if (!isMpvAvailable) return null
-        val url = getGalleryMultiPageViewerUrl(
-            galleryInfo.gid,
-            galleryInfo.token,
-        )
         return runSuspendCatching {
-            ehRequest(url, referer).fetchUsingAsText {
-                GalleryMultiPageViewerPTokenParser.parse(this).forEachIndexed { index, s ->
-                    spiderInfo.pTokenMap[index] = s
-                }
-                spiderInfo.pTokenMap[index]
+            EhEngine.getPTokenListFromMpv(galleryInfo.gid, galleryInfo.token).forEachIndexed { index, s ->
+                spiderInfo.pTokenMap[index] = s
             }
+            spiderInfo.pTokenMap[index]
         }.getOrElse {
             logcat(it)
             null
@@ -376,8 +363,8 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
             false,
         )
         return runSuspendCatching {
-            ehRequest(url, referer).fetchUsingAsText {
-                readPreviews(this, previewIndex, spiderInfo)
+            EhEngine.getPreviewList(url).run {
+                readPreviews(previews, previewIndex, spiderInfo)
                 spiderInfo.pTokenMap[index]
             }
         }.getOrElse {
@@ -432,7 +419,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
     annotation class State
     interface OnSpiderListener {
         fun onGetPages(pages: Int) {}
-        fun onGet509(index: Int) {}
+        fun onFatal(error: FatalException) {}
         fun onPageDownload(index: Int, contentLength: Long, receivedSize: Long, bytesRead: Int) {}
         fun onPageSuccess(index: Int, finished: Int, downloaded: Int, total: Int) {}
         fun onPageFailure(index: Int, error: String?, finished: Int, downloaded: Int, total: Int) {}
@@ -473,11 +460,11 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
 
     private val mWorkerScope = object {
         private val jobs = hashMapOf<Int, Job>()
-        private val semaphore = Semaphore(Settings.multiThreadDownload)
+        private val semaphore = Semaphore(Settings.multiThreadDownload.value)
         private val pTokenLock = Mutex()
         private var showKey: String? = null
         private val showKeyLock = Mutex()
-        private val downloadDelay = Settings.downloadDelay.milliseconds
+        private val downloadDelay = Settings.downloadDelay.value.milliseconds
         private var lastRequestTime = TimeSource.Monotonic.markNow()
         var isDownloadMode = false
             private set
@@ -559,7 +546,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
                 if (!force && index in spiderDen) {
                     return updatePageState(index, STATE_FINISHED)
                 }
-                pToken = getPToken(index) ?: return updatePageState(index, STATE_FAILED, PTOKEN_FAILED_MESSAGE)
+                pToken = getPToken(index) ?: return updatePageState(index, STATE_FAILED, pTokenFailedMessage)
                 previousPToken = getPToken(index - 1)
 
                 // The lock for delay should be acquired before anything else to maintain FIFO order
@@ -572,7 +559,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
             var originImageUrl: String? = null
             var error: String? = null
             var forceHtml = false
-            val original = Settings.downloadOriginImage || orgImg
+            val original = Settings.downloadOriginImage.value || orgImg
             runSuspendCatching {
                 repeat(3) { retries ->
                     var imageUrl: String? = null
@@ -654,10 +641,7 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
                     }
                 }
             }.onFailure {
-                when (it) {
-                    is QuotaExceededException -> notifyGet509(index)
-                    // TODO: Check IP ban
-                }
+                if (it is FatalException) notifyFatal(it)
                 error = it.displayString()
                 if (error == "Invalid page.") {
                     pTokenLock.withLock {
@@ -668,13 +652,13 @@ class SpiderQueen private constructor(val galleryInfo: GalleryInfo) : CoroutineS
             updatePageState(index, STATE_FAILED, error)
         }
     }
+    private val pTokenFailedMessage = appCtx.getString(R.string.error_get_ptoken_error)
 }
 
-private val PTOKEN_FAILED_MESSAGE = appCtx.getString(R.string.error_get_ptoken_error)
-private val URL_509_PATTERN = Regex("\\.org/.+/509s?\\.gif")
+private val Url509Regex = Regex("https://(?:ehgt\\.org/|exhentai\\.org/im)g/509s?\\.gif")
 private const val FORCE_RETRY = "Force retry"
 private const val WORKER_DEBUG_TAG = "SpiderQueenWorker"
 
 private fun check509(url: String) {
-    if (URL_509_PATTERN in url) throw QuotaExceededException()
+    if (Url509Regex.matches(url)) throw QuotaExceededException()
 }

@@ -13,11 +13,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -50,14 +53,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.zIndex
 import androidx.core.view.WindowInsetsControllerCompat
 import arrow.core.Either
 import arrow.core.Either.Companion.catch
 import arrow.core.raise.ensure
 import arrow.core.right
+import com.ehviewer.core.i18n.R
+import com.ehviewer.core.ui.util.Await
+import com.ehviewer.core.ui.util.asyncInVM
+import com.ehviewer.core.ui.util.thenIf
+import com.ehviewer.core.util.launch
+import com.ehviewer.core.util.launchIO
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.hippo.ehviewer.EhDB
-import com.hippo.ehviewer.R
 import com.hippo.ehviewer.Settings
 import com.hippo.ehviewer.client.data.BaseGalleryInfo
 import com.hippo.ehviewer.collectAsState
@@ -73,12 +82,10 @@ import com.hippo.ehviewer.gallery.useEhPageLoader
 import com.hippo.ehviewer.ui.MainActivity
 import com.hippo.ehviewer.ui.Screen
 import com.hippo.ehviewer.ui.theme.EhTheme
-import com.hippo.ehviewer.ui.tools.Await
+import com.hippo.ehviewer.ui.theme.scrim
 import com.hippo.ehviewer.ui.tools.DialogState
-import com.hippo.ehviewer.ui.tools.asyncInVM
 import com.hippo.ehviewer.ui.tools.awaitInputText
 import com.hippo.ehviewer.ui.tools.dialog
-import com.hippo.ehviewer.ui.tools.thenIf
 import com.hippo.ehviewer.util.displayString
 import com.hippo.ehviewer.util.hasAds
 import com.ramcosta.composedestinations.annotation.Destination
@@ -89,7 +96,6 @@ import eu.kanade.tachiyomi.ui.reader.ReaderAppBars
 import eu.kanade.tachiyomi.ui.reader.ReaderContentOverlay
 import eu.kanade.tachiyomi.ui.reader.ReaderPageSheetMeta
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingModeType
-import eu.kanade.tachiyomi.util.lang.launchIO
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
@@ -99,7 +105,6 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
 import moe.tarsin.kt.unreachable
-import moe.tarsin.launch
 import moe.tarsin.string
 import okio.Path.Companion.toPath
 
@@ -177,8 +182,8 @@ fun AnimatedVisibilityScope.ReaderScreen(args: ReaderScreenArgs, navigator: Dest
     }
 }
 
-context(activity: MainActivity, _: SnackbarHostState, _: DialogState, _: CoroutineScope)
 @Composable
+context(activity: MainActivity, _: SnackbarHostState, _: DialogState, _: CoroutineScope)
 fun ReaderScreen(pageLoader: PageLoader, info: BaseGalleryInfo?) {
     LaunchedEffect(Unit) {
         val orientation = activity.requestedOrientation
@@ -195,7 +200,8 @@ fun ReaderScreen(pageLoader: PageLoader, info: BaseGalleryInfo?) {
     }
     val showSeekbar by Settings.showReaderSeekbar.collectAsState()
     val readingMode by Settings.readingMode.collectAsState { ReadingModeType.fromPreference(it) }
-    val reverseControls by Settings.readerReverseControls.collectAsState()
+    val volumeKeysEnabled by Settings.readWithVolumeKeys.collectAsState()
+    val volumeKeysInverted by Settings.readWithVolumeKeysInverted.collectAsState()
     val fullscreen by Settings.fullscreen.collectAsState()
     val cutoutShort by Settings.cutoutShort.collectAsState()
     val keepScreenOn by Settings.keepScreenOn.collectAsState()
@@ -215,8 +221,8 @@ fun ReaderScreen(pageLoader: PageLoader, info: BaseGalleryInfo?) {
     val focusRequester = remember { FocusRequester() }
     Box(
         Modifier.keyEventHandler(
-            enabled = { !appbarVisible },
-            reverse = { reverseControls },
+            volumeKeysEnabled = { volumeKeysEnabled && !appbarVisible },
+            volumeKeysInverted = { volumeKeysInverted },
             movePrevious = { launch { if (isWebtoon) lazyListState.scrollUp() else pagerState.moveToPrevious() } },
             moveNext = { launch { if (isWebtoon) lazyListState.scrollDown() else pagerState.moveToNext() } },
         ).focusRequester(focusRequester).focusable().thenIf(keepScreenOn) { keepScreenOn() },
@@ -232,6 +238,10 @@ fun ReaderScreen(pageLoader: PageLoader, info: BaseGalleryInfo?) {
                     uiController.isSystemBarsVisible = it
                 }
             }
+            Box(
+                Modifier.windowInsetsTopHeight(WindowInsets.statusBars).fillMaxWidth()
+                    .align(Alignment.TopCenter).background(bgColor.scrim()).zIndex(1f),
+            )
         }
         var showNavigationOverlay by remember {
             val showOnStart = Settings.showNavigationOverlayNewUser.value || Settings.showNavigationOverlayOnStart.value
@@ -368,7 +378,7 @@ fun ReaderScreen(pageLoader: PageLoader, info: BaseGalleryInfo?) {
     }
 }
 
-context(ctx: Context, state: DialogState, nav: DestinationsNavigator)
+context(_: Context, _: DialogState, nav: DestinationsNavigator)
 suspend inline fun <T> usePageLoader(args: ReaderScreenArgs, crossinline block: suspend (PageLoader) -> T) = when (args) {
     is ReaderScreenArgs.Gallery -> {
         val info = args.info
@@ -398,7 +408,7 @@ suspend inline fun <T> usePageLoader(args: ReaderScreenArgs, crossinline block: 
 
 @Composable
 private fun collectBackgroundColorAsState(): State<Color> {
-    val grey = colorResource(R.color.reader_background_dark)
+    val grey = colorResource(com.hippo.ehviewer.R.color.reader_background_dark)
     val dark = isSystemInDarkTheme()
     return Settings.readerTheme.collectAsState { theme ->
         when (theme) {

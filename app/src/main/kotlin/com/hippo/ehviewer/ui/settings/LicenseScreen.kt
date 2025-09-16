@@ -2,10 +2,6 @@ package com.hippo.ehviewer.ui.settings
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -17,8 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.hippo.ehviewer.R
+import com.ehviewer.core.i18n.R
 import com.hippo.ehviewer.ui.Screen
+import com.hippo.ehviewer.ui.main.NavigationIcon
 import com.hippo.ehviewer.ui.openBrowser
 import com.mikepenz.aboutlibraries.ui.compose.LibraryDefaults
 import com.mikepenz.aboutlibraries.ui.compose.android.rememberLibraries
@@ -35,16 +32,12 @@ fun AnimatedVisibilityScope.LicenseScreen(navigator: DestinationsNavigator) = Sc
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(id = R.string.license)) },
-                navigationIcon = {
-                    IconButton(onClick = { navigator.popBackStack() }) {
-                        Icon(imageVector = Icons.AutoMirrored.Default.ArrowBack, contentDescription = null)
-                    }
-                },
+                navigationIcon = { NavigationIcon() },
                 scrollBehavior = scrollBehavior,
             )
         },
     ) { paddingValues ->
-        val libraries by rememberLibraries(R.raw.aboutlibraries)
+        val libraries by rememberLibraries(com.hippo.ehviewer.R.raw.aboutlibraries)
         LibrariesContainer(
             libraries = libraries,
             modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
